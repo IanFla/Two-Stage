@@ -1,0 +1,1220 @@
+library(MASS)
+library(Matrix)
+library(numDeriv)
+library(mvtnorm)
+library(msm)
+library(maxLik)
+library(weights)
+library(trust)
+
+#######################
+# VaR GARCH example
+######################
+
+#######################
+# SP500 data
+#######################
+logindex_hist<-read.csv2("SP500.csv",sep=",",dec=".",header=T,colClasses=c("Date",NA))
+length_hist<-dim(logindex_hist)[1]
+logreturn_hist<-logindex_hist$VALUE[-1]-logindex_hist$VALUE[-length_hist]
+y_hist<-100*logreturn_hist[2701:2900]
+
+##############
+# Functions
+##############
+rowProds2<-function(a) Reduce("*", as.data.frame(a))
+colProds2<-function(a) Reduce("*", as.data.frame(t(a)))
+targetdens<-function(x,y_hist,h_ini,logind,a_pars){ # a_pars is c(mu_a,sd_a) of a's prior
+   Time<-length(y_hist)-1
+   n<-dim(x)[1]; d_ahead<-dim(x)[2]-3
+   y_future<-matrix(x[,d_ahead:1],ncol=d_ahead); pars<-matrix(x[,(d_ahead+1):(d_ahead+3)],ncol=3)
+   y2_hist<-y_hist^2
+   y2_future<-y_future^2
+   nonzero_ind<-(1:n)[as.logical(rowProds2(pars[,2:3]>0)*(rowSums(pars[,2:3])<1))]
+   n_nonzero<-length(nonzero_ind)
+   alpha0<-exp(pars[nonzero_ind,1]); alpha1<-pars[nonzero_ind,2]; beta_par<-pars[nonzero_ind,3]
+   targ_dens_log_temp<-rep(0,n_nonzero)  
+   for(i in 1:(Time+d_ahead)){     
+     if(i==1) H_current<-alpha0+alpha1*y_hist[1]^2+beta_par*h_ini
+	 if(i>1) H_current<-alpha0+alpha1*Y_old+beta_par*H_old
+	 if(i<=Time) Y_current<-y2_hist[i+1]
+	 if(i>Time) Y_current<-y2_future[nonzero_ind,i-Time]
+	 targ_dens_log_temp<-targ_dens_log_temp-.5*(Y_current/H_current+log(H_current))
+	 H_old<-H_current
+	 Y_old<-Y_current
+    }
+   priordens_a<-(pars[nonzero_ind,1]-a_pars[1])^2/(-2*a_pars[2]^2)
+   targ_dens_log<-rep(-Inf,n)
+   targ_dens_log[nonzero_ind]<-targ_dens_log_temp+priordens_a
+   if(logind==T) return(targ_dens_log)
+   if(logind==F) targ_dens<-exp(targ_dens_log)
+   return(targ_dens)
+}
+log_neg_targetdens<-function(x,y_hist,h_ini,a_pars){
+   Time<-length(y_hist)-1
+   d_ahead<-length(x)-3
+   pars<-x[(d_ahead+1):(d_ahead+3)]
+   if(!(prod(pars[2:3]>0)*(sum(pars[2:3])<1))) return(Inf)
+   y2_hist<-y_hist^2
+   if(d_ahead>0){
+     y_future<-x[d_ahead:1]
+     y2_future<-y_future^2
+     Y<-c(y2_hist[-1],y2_future)
+   }
+   if(d_ahead==0) Y<-y2_hist[-1]
+   H<-rep(0,Time+d_ahead)
+   for(i in 1:(Time+d_ahead)){
+     if(i==1) H[1]<-exp(pars[1])+pars[2]*y_hist[1]^2+pars[3]*h_ini
+	 if(i>1) H[i]<-exp(pars[1])+pars[2]*Y[i-1]+pars[3]*H[i-1]
+    }
+   priordens_a<-(pars[1]-a_pars[1])^2/(-2*a_pars[2]^2)
+   targ_dens_log<-(-.5)*(t(Y/H+log(H))%*%rep(1,Time+d_ahead))+priordens_a
+browser()
+   return(c(-targ_dens_log))   
+}
+rnorm_trunc<-function(n,mu,std,truncat){ # sampling from truncated univariate normal
+   x<-mu+std*qnorm(runif(n)*pnorm((truncat-mu)/std))
+   return(x)
+}
+y_comp_pred<-function(n,y_future,sample_pars,H_T,d_ahead,truncVaR,is_sampling,comp_numb){
+  alpha0<-exp(sample_pars[,1]); alpha1<-abs(sample_pars[,2]); beta_par<-abs(sample_pars[,3])
+  cum_logreturn<-0
+  if(is_sampling==T){
+    y_future<-matrix(0,n,d_ahead)
+   # Calculate H_T
+	H_current<-H_T
+    if(d_ahead>1){
+	    for(k in 1:(d_ahead-1)){
+            y_future[,k]<-rnorm(n,sd=sqrt(H_current))
+			H_old<-H_current
+			H_current<-alpha0+alpha1*y_future[,k]^2+beta_par*H_old
+			infin_ind<-(1:n)[!is.finite(H_current)]
+			if(length(infin_ind)>0) H_current[infin_ind]<-max(H_current[-infin_ind])
+		}
+	   if(d_ahead>2) cum_logreturn<-y_future[,1:(d_ahead-1)]%*%rep(1,d_ahead-1)
+	   if(d_ahead==2) cum_logreturn<-y_future[,1]
+	}	
+    infin_ind<-(1:n)[!is.finite(H_current)]
+    if(length(infin_ind)>0) H_current[infin_ind]<-max(H_current[-infin_ind])
+	std_H<-sqrt(H_current)
+	if(comp_numb==1) y_future[,d_ahead]<-rnorm(n,mean=0,sd=std_H)
+	if(comp_numb==2) y_future[,d_ahead]<-rnorm(n,mean=-std_H,sd=std_H)
+	if(comp_numb==3) y_future[,d_ahead]<-rnorm_trunc(n,mu=0,std=std_H,truncVaR-cum_logreturn)
+	if(comp_numb==4) y_future[,d_ahead]<-rnorm_trunc(n,mu=-std_H,std=std_H,truncVaR-cum_logreturn)
+    return(y_future[,d_ahead:1]) 
+  }
+  if(is_sampling==F){
+   # Calculate H_T
+	if(d_ahead==1) y_future<-matrix(y_future,ncol=1)
+	n<-dim(y_future)[1]
+	H_current<-H_T
+    if(d_ahead>1){
+	    for(k in 1:(d_ahead-1)){
+			H_old<-H_current
+			H_current<-alpha0+alpha1*y_future[,k]^2+beta_par*H_old
+			infin_ind<-(1:n)[!is.finite(H_current)]
+			if(length(infin_ind)>0) H_current[infin_ind]<-max(H_current[-infin_ind])
+		}
+	   if(d_ahead>2) cum_logreturn<-y_future[,1:(d_ahead-1)]%*%rep(1,d_ahead-1)
+	   if(d_ahead==2) cum_logreturn<-y_future[,1]
+	}
+    infin_ind<-(1:n)[!is.finite(H_current)]
+    if(length(infin_ind)>0) H_current[infin_ind]<-max(H_current[-infin_ind])
+	std_H<-sqrt(H_current); 
+	y_dens<-matrix(0,n,length(comp_numb))
+	for(i in 1:length(comp_numb)){
+		if(comp_numb[i]==1) y_dens[,i]<-dnorm(y_future[,d_ahead],0,std_H)
+		if(comp_numb[i]==2) y_dens[,i]<-dnorm(y_future[,d_ahead],-std_H,std_H)
+		if(comp_numb[i]==3){
+			nc<-pnorm(truncVaR-cum_logreturn,0,std_H)
+			y_dens[,i]<-dnorm(y_future[,d_ahead],0,std_H)/nc
+		    y_dens[y_future[,d_ahead]>truncVaR-cum_logreturn,i]<-0
+		}
+		if(comp_numb[i]==4){
+			nc<-pnorm(truncVaR-cum_logreturn,-std_H,std_H)
+			y_dens[,i]<-dnorm(y_future[,d_ahead],-std_H,std_H)/nc
+		    y_dens[y_future[,d_ahead]>truncVaR-cum_logreturn,i]<-0
+		}	
+	}
+	return(y_dens)
+  }
+}
+y_comp_pred_allcomp<-function(n,y_future,sample_pars,mixprop,H_T,d_ahead,truncVaR,is_sampling){
+  n_comp<-c(n-sum(floor(mixprop[-1]*n)),floor(mixprop[-1]*n)); n_vec<-list(1:(n_comp[1]))
+  alpha0<-exp(sample_pars[,1]); alpha1<-abs(sample_pars[,2]); beta_par<-abs(sample_pars[,3])
+  for(i in 2:8){
+    if(n_comp[i]>0) n_vec[[i]]<-(sum(n_comp[1:(i-1)])+1):sum(n_comp[1:i])
+	if(n_comp[i]==0) n_vec[[i]]<-NULL
+  }
+  np<-sum(n_comp[c(1,3,5,7)]); nq<-sum(n_comp[c(2,4,6,8)])
+  np_vec<-unlist(n_vec[c(1,3,5,7)]); nq_vec<-unlist(n_vec[c(2,4,6,8)])
+  cum_logreturn<-rep(0,n)
+  if(is_sampling==T){
+    y_future<-matrix(0,n,d_ahead)
+   # Calculate H_T
+	H_current<-H_T
+    if(d_ahead>1){
+	    for(k in 1:(d_ahead-1)){
+            y_future[,k]<-rnorm(n,sd=sqrt(H_current))
+			H_old<-H_current
+			H_current<-alpha0+alpha1*y_future[,k]^2+beta_par*H_old
+			infin_ind<-(1:n)[!is.finite(H_current)]
+			if(length(infin_ind)>0) H_current[infin_ind]<-max(H_current[-infin_ind])
+		}
+	   if(d_ahead>2) cum_logreturn<-y_future[,1:(d_ahead-1)]%*%rep(1,d_ahead-1)
+	   if(d_ahead==2) cum_logreturn<-y_future[,1]
+	}
+    infin_ind<-(1:n)[!is.finite(H_current)]
+    if(length(infin_ind)>0) H_current[infin_ind]<-max(H_current[-infin_ind])
+	std_H<-sqrt(H_current)
+   # Generate samples
+	y_last_mup<-rep(0,n); y_last_muq<-(-std_H)
+	n13<-n_comp[1]+n_comp[3]; n13_vec<-c(n_vec[[1]],n_vec[[3]])
+	n24<-n_comp[2]+n_comp[4]; n24_vec<-c(n_vec[[2]],n_vec[[4]])
+	n5<-n_comp[5]; if(n5>0) n5_vec<-n_vec[[5]]
+	n6<-n_comp[6]; if(n6>0) n6_vec<-n_vec[[6]]
+	n7<-n_comp[7]; if(n7>0) n7_vec<-n_vec[[7]]
+	n8<-n_comp[8]; if(n8>0) n8_vec<-n_vec[[8]]	
+    if(n13>0) y_future[n13_vec,d_ahead]<-rnorm(n13,mean=0,sd=std_H[n13_vec])
+	if(n24>0) y_future[n24_vec,d_ahead]<-rnorm(n24,mean=y_last_muq[n24_vec],sd=std_H[n24_vec])
+	if(n5>0) y_future[n5_vec,d_ahead]<-rnorm_trunc(n5,0,std_H[n5_vec],truncVaR[1]-cum_logreturn[n5_vec])
+	if(n6>0) y_future[n6_vec,d_ahead]<-rnorm_trunc(n6,y_last_muq[n6_vec],std_H[n6_vec],truncVaR[1]-cum_logreturn[n6_vec])
+    if(n7>0) y_future[n7_vec,d_ahead]<-rnorm_trunc(n7,0,std_H[n7_vec],truncVaR[2]-cum_logreturn[n7_vec])
+	if(n8>0) y_future[n8_vec,d_ahead]<-rnorm_trunc(n8,y_last_muq[n8_vec],std_H[n8_vec],truncVaR[2]-cum_logreturn[n8_vec])
+   # Calculate densities	
+    y_dens<-matrix(0,n,8); y_last<-y_future[,d_ahead]
+    y_last_bound1<-truncVaR[1]-cum_logreturn; y_last_bound2<-truncVaR[2]-cum_logreturn
+	y_dens[,c(1,3)]<-dnorm(y_last,y_last_mup,std_H)
+	y_dens[,c(2,4)]<-dnorm(y_last,y_last_muq,std_H)
+	nc_pVaR1<-pnorm(y_last_bound1,y_last_mup,std_H)
+	nc_qVaR1<-pnorm(y_last_bound1,y_last_muq,std_H)
+	y_dens[,5]<-dnorm(y_last,y_last_mup,std_H)/nc_pVaR1
+	y_dens[y_last>y_last_bound1,5]<-0
+	y_dens[,6]<-dnorm(y_last,y_last_muq,std_H)/nc_qVaR1
+	y_dens[y_last>y_last_bound1,6]<-0
+	nc_pVaR2<-pnorm(y_last_bound2,y_last_mup,std_H)
+	nc_qVaR2<-pnorm(y_last_bound2,y_last_muq,std_H)	
+	y_dens[,7]<-dnorm(y_last,y_last_mup,std_H)/nc_pVaR2
+	y_dens[y_last>y_last_bound2,7]<-0
+	y_dens[,8]<-dnorm(y_last,y_last_muq,std_H)/nc_qVaR2
+	y_dens[y_last>y_last_bound2,8]<-0
+	return(list(y_future[,d_ahead:1],y_dens))
+   }
+  if(is_sampling==F){
+   # Calculate H_T
+	if(d_ahead==1) y_future<-matrix(y_future,ncol=1)
+	n<-dim(y_future)[1]
+	H_current<-H_T
+    if(d_ahead>1){
+	    for(k in 1:(d_ahead-1)){
+			H_old<-H_current
+			H_current<-alpha0+alpha1*y_future[,k]^2+beta_par*H_old
+			infin_ind<-(1:n)[!is.finite(H_current)]
+			if(length(infin_ind)>0) H_current[infin_ind]<-max(H_current[-infin_ind])
+		}
+       if(d_ahead>2) cum_logreturn<-y_future[,1:(d_ahead-1)]%*%rep(1,d_ahead-1)
+	   if(d_ahead==2) cum_logreturn<-y_future[,1]
+    }
+    infin_ind<-(1:n)[!is.finite(H_current)]
+    if(length(infin_ind)>0) H_current[infin_ind]<-max(H_current[-infin_ind])
+	std_H<-sqrt(H_current)
+   # Calculate densities	
+ 	y_last_mup<-rep(0,n); y_last_muq<-(-std_H)
+    y_dens<-matrix(0,n,8); y_last<-y_future[,d_ahead]
+    y_last_bound1<-truncVaR[1]-cum_logreturn; y_last_bound2<-truncVaR[2]-cum_logreturn
+	y_dens[,c(1,3)]<-dnorm(y_last,y_last_mup,std_H)
+	y_dens[,c(2,4)]<-dnorm(y_last,y_last_muq,std_H)
+	nc_pVaR1<-pnorm(y_last_bound1,y_last_mup,std_H)
+	nc_qVaR1<-pnorm(y_last_bound1,y_last_muq,std_H)
+	y_dens[,5]<-dnorm(y_last,y_last_mup,std_H)/nc_pVaR1
+	y_dens[y_last>y_last_bound1,5]<-0
+	y_dens[,6]<-dnorm(y_last,y_last_muq,std_H)/nc_qVaR1
+	y_dens[y_last>y_last_bound1,6]<-0
+	nc_pVaR2<-pnorm(y_last_bound2,y_last_mup,std_H)
+	nc_qVaR2<-pnorm(y_last_bound2,y_last_muq,std_H)	
+	y_dens[,7]<-dnorm(y_last,y_last_mup,std_H)/nc_pVaR2
+	y_dens[y_last>y_last_bound2,7]<-0
+	y_dens[,8]<-dnorm(y_last,y_last_muq,std_H)/nc_qVaR2
+	y_dens[y_last>y_last_bound2,8]<-0
+	return(y_dens)	
+	}    
+  }
+y_comp_pred_prop2<-function(n,y_future,sample_pars,H_T,d_ahead,truncVaR,is_sampling,comp_numb){
+  alpha0<-exp(sample_pars[,1]); alpha1<-abs(sample_pars[,2]); beta_par<-abs(sample_pars[,3])
+  cum_logreturn<-0
+  if(is_sampling==T){
+    y_future<-matrix(0,n,d_ahead)
+   # Calculate H_T
+	H_current<-H_T
+    if(d_ahead>1){
+	    for(k in 1:(d_ahead-1)){
+            if(comp_numb==1||comp_numb==3) y_future[,k]<-rnorm(n,sd=sqrt(H_current))
+            if(comp_numb==2||comp_numb==4) y_future[,k]<-rnorm(n,mean=-sqrt(H_current),sd=sqrt(H_current))
+			H_old<-H_current
+			H_current<-alpha0+alpha1*y_future[,k]^2+beta_par*H_old
+			infin_ind<-(1:n)[!is.finite(H_current)]
+			if(length(infin_ind)>0) H_current[infin_ind]<-max(H_current[-infin_ind])
+		}
+	   if(d_ahead>2) cum_logreturn<-y_future[,1:(d_ahead-1)]%*%rep(1,d_ahead-1)
+	   if(d_ahead==2) cum_logreturn<-y_future[,1]
+	}	
+    infin_ind<-(1:n)[!is.finite(H_current)]
+    if(length(infin_ind)>0) H_current[infin_ind]<-max(H_current[-infin_ind])
+	std_H<-sqrt(H_current)
+	if(comp_numb==1) y_future[,d_ahead]<-rnorm(n,mean=0,sd=std_H)
+	if(comp_numb==2) y_future[,d_ahead]<-rnorm(n,mean=-std_H,sd=std_H)
+	if(comp_numb==3) y_future[,d_ahead]<-rnorm_trunc(n,mu=0,std=std_H,truncVaR-cum_logreturn)
+	if(comp_numb==4) y_future[,d_ahead]<-rnorm_trunc(n,mu=-std_H,std=std_H,truncVaR-cum_logreturn)
+    return(y_future[,d_ahead:1]) 
+  }
+  if(is_sampling==F){
+   # Calculate H_T
+	if(d_ahead==1) y_future<-matrix(y_future,ncol=1)
+	n<-dim(y_future)[1]
+	H_current<-H_T
+	y_dens_dminus1_13<-rep(1,n); y_dens_dminus1_24<-rep(1,n);
+    if(d_ahead>1){
+	    for(k in 1:(d_ahead-1)){
+            if(length(intersect(c(1,3),comp_numb))>0) y_dens_dminus1_13<-y_dens_dminus1_13*dnorm(y_future[,k],sd=sqrt(H_current))
+            if(length(intersect(c(2,4),comp_numb))>0) y_dens_dminus1_24<-y_dens_dminus1_24*dnorm(y_future[,k],mean=-sqrt(H_current),sd=sqrt(H_current))
+			H_old<-H_current
+			H_current<-alpha0+alpha1*y_future[,k]^2+beta_par*H_old
+			infin_ind<-(1:n)[!is.finite(H_current)]
+			if(length(infin_ind)>0) H_current[infin_ind]<-max(H_current[-infin_ind])
+		}
+	   if(d_ahead>2) cum_logreturn<-y_future[,1:(d_ahead-1)]%*%rep(1,d_ahead-1)
+	   if(d_ahead==2) cum_logreturn<-y_future[,1]
+	}
+    infin_ind<-(1:n)[!is.finite(H_current)]
+    if(length(infin_ind)>0) H_current[infin_ind]<-max(H_current[-infin_ind])
+	std_H<-sqrt(H_current); 
+	y_dens<-matrix(0,n,length(comp_numb))
+	for(i in 1:length(comp_numb)){
+		if(comp_numb[i]==1) y_dens[,i]<-dnorm(y_future[,d_ahead],0,std_H)*y_dens_dminus1_13
+		if(comp_numb[i]==2) y_dens[,i]<-dnorm(y_future[,d_ahead],-std_H,std_H)*y_dens_dminus1_24
+		if(comp_numb[i]==3){
+			nc<-pnorm(truncVaR-cum_logreturn,0,std_H)
+			y_dens[,i]<-dnorm(y_future[,d_ahead],0,std_H)/nc*y_dens_dminus1_13
+		    y_dens[y_future[,d_ahead]>truncVaR-cum_logreturn,i]<-0
+		}
+		if(comp_numb[i]==4){
+			nc<-pnorm(truncVaR-cum_logreturn,-std_H,std_H)
+			y_dens[,i]<-dnorm(y_future[,d_ahead],-std_H,std_H)/nc*y_dens_dminus1_24
+		    y_dens[y_future[,d_ahead]>truncVaR-cum_logreturn,i]<-0
+		}	
+	}
+	return(y_dens)
+  }
+}
+y_comp_pred_allcomp_prop2<-function(n,y_future,sample_pars,mixprop,H_T,d_ahead,truncVaR,is_sampling){
+  n_comp<-c(n-sum(floor(mixprop[-1]*n)),floor(mixprop[-1]*n)); n_vec<-list(1:(n_comp[1]))
+  alpha0<-exp(sample_pars[,1]); alpha1<-abs(sample_pars[,2]); beta_par<-abs(sample_pars[,3])
+  for(i in 2:8){
+    if(n_comp[i]>0) n_vec[[i]]<-(sum(n_comp[1:(i-1)])+1):sum(n_comp[1:i])
+	if(n_comp[i]==0) n_vec[[i]]<-NULL
+  }
+  np<-sum(n_comp[c(1,3,5,7)]); nq<-sum(n_comp[c(2,4,6,8)])
+  np_vec<-unlist(n_vec[c(1,3,5,7)]); nq_vec<-unlist(n_vec[c(2,4,6,8)])
+  y_dens_dminus1_1357<-rep(1,n); y_dens_dminus1_2468<-rep(1,n);
+  if(is_sampling==T){
+    y_future<-matrix(0,n,d_ahead)
+   # Calculate H_T
+	H_current<-H_T
+	cum_logreturn<-rep(0,n)
+    if(d_ahead>1){
+	    for(k in 1:(d_ahead-1)){
+            if(np>0) y_future[np_vec,k]<-rnorm(np,sd=sqrt(H_current[np_vec]))	    
+            if(nq>0) y_future[nq_vec,k]<-rnorm(nq,mean=-sqrt(H_current),sd=sqrt(H_current[nq_vec]))
+            y_dens_dminus1_1357<-y_dens_dminus1_1357*dnorm(y_future[,k],sd=sqrt(H_current))
+            y_dens_dminus1_2468<-y_dens_dminus1_2468*dnorm(y_future[,k],mean=-sqrt(H_current),sd=sqrt(H_current))
+			H_old<-H_current
+			H_current<-alpha0+alpha1*y_future[,k]^2+beta_par*H_old
+			infin_ind<-(1:n)[!is.finite(H_current)]
+			if(length(infin_ind)>0) H_current[infin_ind]<-max(H_current[-infin_ind])
+		}
+	   if(d_ahead>2) cum_logreturn<-y_future[,1:(d_ahead-1)]%*%rep(1,d_ahead-1)
+	   if(d_ahead==2) cum_logreturn<-y_future[,1]
+	}
+    infin_ind<-(1:n)[!is.finite(H_current)]
+    if(length(infin_ind)>0) H_current[infin_ind]<-max(H_current[-infin_ind])
+	std_H<-sqrt(H_current)
+   # Generate samples
+	y_last_mup<-rep(0,n); y_last_muq<-(-std_H)
+	n13<-n_comp[1]+n_comp[3]; n13_vec<-c(n_vec[[1]],n_vec[[3]])
+	n24<-n_comp[2]+n_comp[4]; n24_vec<-c(n_vec[[2]],n_vec[[4]])
+	n5<-n_comp[5]; if(n5>0) n5_vec<-n_vec[[5]]
+	n6<-n_comp[6]; if(n6>0) n6_vec<-n_vec[[6]]
+	n7<-n_comp[7]; if(n7>0) n7_vec<-n_vec[[7]]
+	n8<-n_comp[8]; if(n8>0) n8_vec<-n_vec[[8]]	
+    if(n13>0) y_future[n13_vec,d_ahead]<-rnorm(n13,mean=0,sd=std_H[n13_vec])
+	if(n24>0) y_future[n24_vec,d_ahead]<-rnorm(n24,mean=y_last_muq[n24_vec],sd=std_H[n24_vec])
+	if(n5>0) y_future[n5_vec,d_ahead]<-rnorm_trunc(n5,0,std_H[n5_vec],truncVaR[1]-cum_logreturn[n5_vec])
+	if(n6>0) y_future[n6_vec,d_ahead]<-rnorm_trunc(n6,y_last_muq[n6_vec],std_H[n6_vec],truncVaR[1]-cum_logreturn[n6_vec])
+    if(n7>0) y_future[n7_vec,d_ahead]<-rnorm_trunc(n7,0,std_H[n7_vec],truncVaR[2]-cum_logreturn[n7_vec])
+	if(n8>0) y_future[n8_vec,d_ahead]<-rnorm_trunc(n8,y_last_muq[n8_vec],std_H[n8_vec],truncVaR[2]-cum_logreturn[n8_vec])
+   # Calculate densities	
+    y_dens<-matrix(0,n,8); y_last<-y_future[,d_ahead]
+    y_last_bound1<-truncVaR[1]-cum_logreturn; y_last_bound2<-truncVaR[2]-cum_logreturn
+	y_dens[,c(1,3)]<-dnorm(y_last,y_last_mup,std_H)*y_dens_dminus1_1357
+	y_dens[,c(2,4)]<-dnorm(y_last,y_last_muq,std_H)*y_dens_dminus1_2468
+	nc_pVaR1<-pnorm(y_last_bound1,y_last_mup,std_H)
+	nc_qVaR1<-pnorm(y_last_bound1,y_last_muq,std_H)
+	y_dens[,5]<-dnorm(y_last,y_last_mup,std_H)/nc_pVaR1*y_dens_dminus1_1357
+	y_dens[y_last>y_last_bound1,5]<-0
+	y_dens[,6]<-dnorm(y_last,y_last_muq,std_H)/nc_qVaR1*y_dens_dminus1_2468
+	y_dens[y_last>y_last_bound1,6]<-0
+	nc_pVaR2<-pnorm(y_last_bound2,y_last_mup,std_H)
+	nc_qVaR2<-pnorm(y_last_bound2,y_last_muq,std_H)	
+	y_dens[,7]<-dnorm(y_last,y_last_mup,std_H)/nc_pVaR2*y_dens_dminus1_1357
+	y_dens[y_last>y_last_bound2,7]<-0
+	y_dens[,8]<-dnorm(y_last,y_last_muq,std_H)/nc_qVaR2*y_dens_dminus1_2468
+	y_dens[y_last>y_last_bound2,8]<-0
+	return(list(y_future[,d_ahead:1],y_dens))
+   }
+  if(is_sampling==F){
+   # Calculate H_T
+	if(d_ahead==1) y_future<-matrix(y_future,ncol=1)
+	n<-dim(y_future)[1]
+	H_current<-H_T
+    if(d_ahead>1){
+	    for(k in 1:(d_ahead-1)){
+            y_dens_dminus1_1357<-y_dens_dminus1_1357*dnorm(y_future[,k],sd=sqrt(H_current))
+            y_dens_dminus1_2468<-y_dens_dminus1_2468*dnorm(y_future[,k],mean=-sqrt(H_current),sd=sqrt(H_current))
+			H_old<-H_current
+			H_current<-alpha0+alpha1*y_future[,k]^2+beta_par*H_old
+			infin_ind<-(1:n)[!is.finite(H_current)]
+			if(length(infin_ind)>0) H_current[infin_ind]<-max(H_current[-infin_ind])
+		}
+    }
+    infin_ind<-(1:n)[!is.finite(H_current)]
+    if(length(infin_ind)>0) H_current[infin_ind]<-max(H_current[-infin_ind])
+	std_H<-sqrt(H_current)
+   # Calculate densities	
+ 	y_last_mup<-rep(0,n); y_last_muq<-(-std_H)
+    y_dens<-matrix(0,n,8); y_last<-y_future[,d_ahead]
+    y_last_bound1<-truncVaR[1]-cum_logreturn; y_last_bound2<-truncVaR[2]-cum_logreturn
+	y_dens[,c(1,3)]<-dnorm(y_last,y_last_mup,std_H)*y_dens_dminus1_1357
+	y_dens[,c(2,4)]<-dnorm(y_last,y_last_muq,std_H)*y_dens_dminus1_2468
+	nc_pVaR1<-pnorm(y_last_bound1,y_last_mup,std_H)
+	nc_qVaR1<-pnorm(y_last_bound1,y_last_muq,std_H)
+	y_dens[,5]<-dnorm(y_last,y_last_mup,std_H)/nc_pVaR1*y_dens_dminus1_1357
+	y_dens[y_last>y_last_bound1,5]<-0
+	y_dens[,6]<-dnorm(y_last,y_last_muq,std_H)/nc_qVaR1*y_dens_dminus1_2468
+	y_dens[y_last>y_last_bound1,6]<-0
+	nc_pVaR2<-pnorm(y_last_bound2,y_last_mup,std_H)
+	nc_qVaR2<-pnorm(y_last_bound2,y_last_muq,std_H)	
+	y_dens[,7]<-dnorm(y_last,y_last_mup,std_H)/nc_pVaR2*y_dens_dminus1_1357
+	y_dens[y_last>y_last_bound2,7]<-0
+	y_dens[,8]<-dnorm(y_last,y_last_muq,std_H)/nc_qVaR2*y_dens_dminus1_2468
+	y_dens[y_last>y_last_bound2,8]<-0
+	return(y_dens)	
+	}    
+  }
+  
+ times<-function(x,y) return(x*y) 
+ numb_g<-7
+ I_G1_1<-NULL
+ for(i in 1:numb_g) I_G1_1<-rbind(I_G1_1,diag(1,numb_g))
+ I_G1_2<-matrix(0,numb_g^2,numb_g)
+ for(i in 1:numb_g) I_G1_2[((i-1)*numb_g+1):(i*numb_g),i]<-rep(1,numb_g)
+ I_G2_1<-t(I_G1_1)
+ I_G2_2<-t(I_G1_2)
+ A1_index<-NULL; A1_re_index<-NULL # rearrange numb_g*numb_g k1*k2 matrices
+ k1<-numb_g; k2<-numb_g
+ for(i in 1:numb_g){
+  for(j in 1:numb_g){
+   A1_index<-rbind(A1_index,cbind(rep(1:k1,rep(k2,k1))+(i-1)*k1,rep(1:k2,k1)+(j-1)*k2))
+   A1_re_index<-rbind(A1_re_index,cbind(rep(1:k1,rep(k2,k1))+(j-1)*k1,rep(1:k2,k1)+(i-1)*k2))
+  }
+ }  
+ A2_index<-NULL; A2_re_index<-NULL # rearrange numb_g*numb_g k1*k2 matrices
+ k1<-numb_g; k2<-1
+ for(i in 1:numb_g){
+  for(j in 1:numb_g){
+   A2_index<-rbind(A2_index,cbind(rep(1:k1,rep(k2,k1))+(i-1)*k1,rep(1:k2,k1)+(j-1)*k2))
+   A2_re_index<-rbind(A2_re_index,cbind(rep(1:k1,rep(k2,k1))+(j-1)*k1,rep(1:k2,k1)+(i-1)*k2))
+  }
+ }
+blockdiag<-function(A,k){ # bdiag is costly, need modification
+ l1<-dim(A)[1]; l2<-dim(A)[2];
+ A_diag<-matrix(0,k*l1,k*l2)
+ for(i in 1:k) A_diag[((i-1)*l1+1):(i*l1),((i-1)*l2+1):(i*l2)]<-A
+ return(A_diag)
+}
+beta_reg_est<-function(alpha_vec_excludefirst,pi_dens,q_dens,h,mu_hat,q_gamma,g_dens){
+ n0<-length(pi_dens)  
+ alpha_vec<-c(1-sum(alpha_vec_excludefirst),alpha_vec_excludefirst)
+ q_alpha<-t(alpha_vec)%*%q_dens
+ 
+ temp<-!(pi_dens==0)
+ pi_dens<-pi_dens[temp]
+ q_gamma<-q_gamma[temp]
+ g_dens<-t(g_dens[,temp])
+ q_alpha<-q_alpha[temp] 
+ h<-h[temp]
+
+browser() 
+ part1_beta<-t(g_dens*((1/q_gamma)%*%t(rep(1,7))))
+ part2_beta<-g_dens*((1/q_alpha)%*%t(rep(1,7)))
+ part3_beta<-solve(part1_beta%*%part2_beta)
+ part4_beta<-t(g_dens*((((h-mu_hat)*pi_dens)/q_alpha/q_gamma)%*%t(rep(1,7))))
+ part5_beta<-part4_beta%*%rep(1,n0-length(temp))
+ beta_MLE<-part3_beta%*%part5_beta
+
+ return(beta_MLE)
+}
+
+partial_var_MLE_value<-function(theta_excludefirst,pi_dens,q_dens,h,mu_hat,q_gamma,g_dens){ #q_dens is numb_comp*n, g_dens is numb_g*n
+ if(sum(theta_excludefirst<0)>0||sum(theta_excludefirst)>0.999) return(Inf)
+ numb_g<-dim(g_dens)[1]
+ alpha_vec<-c(1-sum(theta_excludefirst),theta_excludefirst)
+ q_alpha<-t(alpha_vec)%*%q_dens
+ temp<-!(pi_dens==0)
+ pi_dens<-pi_dens[temp]
+ q_gamma<-q_gamma[temp]
+ g_dens<-g_dens[,temp]
+ q_alpha<-q_alpha[temp] 
+ h<-h[temp]
+ #
+ cc1<-min(q_gamma)
+ q_gamma_temp<-q_gamma
+ q_gamma<-q_gamma/cc1
+ cc2<-median(pi_dens)
+ pi_dens_temp<-pi_dens
+ pi_dens<-pi_dens/cc2
+ #
+ f<-(h-mu_hat)*pi_dens
+ part1_beta<-g_dens/(rep(1,numb_g)%*%t(q_alpha))
+ part2_beta<-t(g_dens/(rep(1,numb_g)%*%t(q_gamma)))
+ B_inv<-solve(part1_beta%*%part2_beta)
+ #
+ part4_beta<-f/q_gamma
+ part5_beta<-part1_beta%*%part4_beta
+ beta_MLE<-B_inv%*%part5_beta
+ #
+ G<-g_dens
+ var_MLE_val<-mean(((f-c(t(beta_MLE)%*%G))/q_alpha)*((f-c(t(beta_MLE)%*%G))/q_gamma)) 
+ var_MLE_val<-var_MLE_val/cc1
+ return(var_MLE_val)
+}
+var_MLE<-function(theta_excludefirst,pi_dens,q_dens,h_all,mu_hat_all,q_gamma,g_dens,fnscale){
+   # h is n0*length(rhos) matrix with each column being the indicator function of each VaR; mu_hat_all includse all rho for VaR; q_dens is numb_comp*n0 matrix; g_dens is numb_g*n matrix
+   numb_mu<-length(mu_hat_all)
+   var_MLE_part<-0
+   for(i in 1:numb_mu) var_MLE_part[i]<-partial_var_MLE_value(theta_excludefirst,pi_dens,q_dens,h_all[,i],mu_hat_all[i],q_gamma,g_dens)
+   var_MLE_value<-sum(var_MLE_part)/numb_mu
+   return(var_MLE_value/fnscale)
+}
+partial_var_MLE_value_beta<-function(theta_excludefirst_beta,pi_dens,q_dens,h,mu_hat,q_gamma,g_dens){ #q_dens is numb_comp*n, g_dens is numb_g*n
+ theta_excludefirst<-theta_excludefirst_beta[1:(p-1)]
+ beta_MLE<-theta_excludefirst_beta[-(1:(p-1))]
+ if(sum(theta_excludefirst<0)>0||sum(theta_excludefirst)>0.999) return(Inf)
+ numb_g<-dim(g_dens)[1]
+ alpha_vec<-c(1-sum(theta_excludefirst),theta_excludefirst)
+ q_alpha<-t(alpha_vec)%*%q_dens
+ temp<-!(pi_dens==0)
+ pi_dens<-pi_dens[temp]
+ q_gamma<-q_gamma[temp]
+ g_dens<-g_dens[,temp]
+ q_alpha<-q_alpha[temp] 
+ h<-h[temp]
+ #
+ cc1<-min(q_gamma)
+ q_gamma_temp<-q_gamma
+ q_gamma<-q_gamma/cc1
+ cc2<-median(pi_dens)
+ pi_dens_temp<-pi_dens
+ pi_dens<-pi_dens/cc2
+ #
+ f<-(h-mu_hat)*pi_dens
+ #
+ G<-g_dens
+ var_MLE_val<-mean(((f-c(t(beta_MLE)%*%G))/q_alpha)*((f-c(t(beta_MLE)%*%G))/q_gamma)) 
+ var_MLE_val<-var_MLE_val/cc1
+ return(var_MLE_val)
+}
+var_MLE_beta<-function(theta_excludefirst_beta,pi_dens,q_dens,h_all,mu_hat_all,q_gamma,g_dens,fnscale){
+   # h is n0*length(rhos) matrix with each column being the indicator function of each VaR; mu_hat_all includse all rho for VaR; q_dens is numb_comp*n0 matrix; g_dens is numb_g*n matrix
+   numb_mu<-length(mu_hat_all)
+   var_MLE_part<-0
+   #for(i in 1:numb_mu) var_MLE_part[i]<-partial_var_MLE_value(theta_excludefirst,pi_dens,q_dens,h_all[,i],mu_hat_all[i],q_gamma,g_dens)
+   for(i in 1:numb_mu) var_MLE_part[i]<-partial_var_MLE_value_beta(theta_excludefirst_beta,pi_dens,q_dens,h_all[,i],mu_hat_all[i],q_gamma,g_dens)
+   var_MLE_value<-sum(var_MLE_part)/numb_mu
+   return(var_MLE_value/fnscale)
+}
+
+ numb_g<-7
+ I_G1_1<-NULL
+ for(i in 1:numb_g) I_G1_1<-rbind(I_G1_1,diag(1,numb_g))
+ I_G1_2<-matrix(0,numb_g^2,numb_g)
+ for(i in 1:numb_g) I_G1_2[((i-1)*numb_g+1):(i*numb_g),i]<-rep(1,numb_g)
+ I_G2_1<-t(I_G1_1)
+ I_G2_2<-t(I_G1_2)
+
+partial_var_MLE_gradient<-function(theta_excludefirst,pi_dens,q_dens,h,mu_hat,q_gamma,g_dens){ # the form of g_dens has to be (q2-q1,q3-q1,...,q_p-q1)
+ if(sum(theta_excludefirst<0)>0||sum(theta_excludefirst)>0.999) return(Inf)
+
+ numb_g<-dim(g_dens)[1]
+ I_G1_1<-NULL
+ for(i in 1:numb_g) I_G1_1<-rbind(I_G1_1,diag(1,numb_g))
+ I_G1_2<-matrix(0,numb_g^2,numb_g)
+ for(i in 1:numb_g) I_G1_2[((i-1)*numb_g+1):(i*numb_g),i]<-rep(1,numb_g)
+ I_G2_1<-t(I_G1_1)
+ I_G2_2<-t(I_G1_2)
+
+ alpha_vec<-c(1-sum(theta_excludefirst),theta_excludefirst)
+ q_alpha<-t(alpha_vec)%*%q_dens
+ #temp<-!((pi_dens==0)&(q_alpha==0))
+ temp<-!(pi_dens==0)
+ pi_dens<-pi_dens[temp]
+ q_gamma<-q_gamma[temp]
+ g_dens<-g_dens[,temp]
+ q_alpha<-q_alpha[temp]
+ h<-h[temp]
+ n0<-length(pi_dens)
+ #
+ cc1<-min(q_gamma)
+ q_gamma_temp<-q_gamma
+ q_gamma<-q_gamma/cc1
+ cc2<-median(pi_dens)
+ pi_dens_temp<-pi_dens
+ pi_dens<-pi_dens/cc2
+ #
+ f<-(h-mu_hat)*pi_dens
+ part1_beta<-g_dens/(rep(1,numb_g)%*%t(q_alpha))
+ part2_beta<-t(g_dens/(rep(1,numb_g)%*%t(q_gamma)))
+ B_inv<-solve(part1_beta%*%part2_beta)
+ #
+ part4_beta<-f/q_gamma
+ part5_beta<-part1_beta%*%part4_beta
+ beta_MLE<-B_inv%*%part5_beta
+ #
+ G<-g_dens
+ tau1<-(f-c(t(beta_MLE)%*%G))/q_alpha/q_gamma
+ #
+ q_alpha2_gamma<-1/q_alpha^2/q_gamma #could be Inf
+ C<-part5_beta
+ B_inv_C_diag<-blockdiag(B_inv%*%C,numb_g)
+ G2<-(t(G)%*%I_G2_1)*(((q_alpha2_gamma%*%t(rep(1,numb_g)))*t(G))%*%I_G2_2)
+ G3<-((f*q_alpha2_gamma)%*%t(rep(1,numb_g)))*t(G)
+ #
+ B_p<--G%*%G2
+ C_p<--G%*%G3
+ #
+ beta_gradient<-t(-B_inv%*%B_p%*%B_inv_C_diag+B_inv%*%C_p)
+
+ var_gradient_part1<-G%*%(tau1^2*q_gamma)/n0
+ var_gradient_part2<-beta_gradient%*%(G*(rep(1,numb_g)%*%t(tau1)))%*%rep(1,n0)*2/n0
+ var_gradient<-as.vector(-var_gradient_part1-var_gradient_part2)
+
+ var_gradient<-var_gradient/cc1
+ return(var_gradient)
+}
+var_MLE_gradient<-function(theta_excludefirst,pi_dens,q_dens,h_all,mu_hat_all,q_gamma,g_dens,fnscale){
+   # h is n0*length(rhos) matrix with each column being the indicator function of each VaR; mu_hat_all includse all rho for VaR; q_dens is numb_comp*n0 matrix; g_dens is numb_g*n matrix
+   numb_mu<-length(mu_hat_all)
+   numb_comp<-8
+   var_MLE_gradient_part<-matrix(0,numb_comp-1,numb_mu)
+   for(i in 1:numb_mu) var_MLE_gradient_part[,i]<-partial_var_MLE_gradient(theta_excludefirst,pi_dens,q_dens,h_all[,i],mu_hat_all[i],q_gamma,g_dens)
+   var_MLE_gradient_value<-rowSums(var_MLE_gradient_part)/numb_mu
+   return(var_MLE_gradient_value/fnscale)
+}
+partial_var_MLE_gradient_beta<-function(theta_excludefirst_beta,pi_dens,q_dens,h,mu_hat,q_gamma,g_dens){ # the form of g_dens has to be (q2-q1,q3-q1,...,q_p-q1)
+ theta_excludefirst<-theta_excludefirst_beta[1:(p-1)]
+ beta_MLE<-theta_excludefirst_beta[-(1:(p-1))]
+ if(sum(theta_excludefirst<0)>0||sum(theta_excludefirst)>0.999) return(Inf)
+ numb_g<-dim(g_dens)[1]
+ alpha_vec<-c(1-sum(theta_excludefirst),theta_excludefirst)
+ q_alpha<-t(alpha_vec)%*%q_dens
+ #temp<-!((pi_dens==0)&(q_alpha==0))
+ temp<-!(pi_dens==0)
+ pi_dens<-pi_dens[temp]
+ q_gamma<-q_gamma[temp]
+ g_dens<-g_dens[,temp]
+ q_alpha<-q_alpha[temp]
+ h<-h[temp]
+ n0<-length(pi_dens)
+ #
+ cc1<-min(q_gamma)
+ q_gamma_temp<-q_gamma
+ q_gamma<-q_gamma/cc1
+ cc2<-median(pi_dens)
+ pi_dens_temp<-pi_dens
+ pi_dens<-pi_dens/cc2
+ #
+ f<-(h-mu_hat)*pi_dens
+ #
+ G<-g_dens
+ tau1<-(f-c(t(beta_MLE)%*%G))/q_alpha/q_gamma
+#
+ var_gradient<-c(-G%*%(tau1^2*q_gamma)/n0,-G%*%tau1*2/n0)
+ var_gradient<-as.vector(var_gradient/cc1)
+ return(var_gradient)
+}
+var_MLE_gradient_beta<-function(theta_excludefirst_beta,pi_dens,q_dens,h_all,mu_hat_all,q_gamma,g_dens,fnscale){
+   # h is n0*length(rhos) matrix with each column being the indicator function of each VaR; mu_hat_all includse all rho for VaR; q_dens is numb_comp*n0 matrix; g_dens is numb_g*n matrix
+   numb_mu<-length(mu_hat_all)
+   numb_comp<-8
+   var_MLE_gradient_part<-matrix(0,numb_comp-1,numb_mu)
+   #for(i in 1:numb_mu) var_MLE_gradient_part[,i]<-partial_var_MLE_gradient(theta_excludefirst,pi_dens,q_dens,h_all[,i],mu_hat_all[i],q_gamma,g_dens)
+   for(i in 1:numb_mu) var_MLE_gradient_part[,i]<-partial_var_MLE_gradient_beta(theta_excludefirst_beta,pi_dens,q_dens,h_all[,i],mu_hat_all[i],q_gamma,g_dens)
+   var_MLE_gradient_value<-rowSums(var_MLE_gradient_part)/numb_mu
+   return(var_MLE_gradient_value/fnscale)
+}
+
+partial_var_MLE_hessian<-function(theta_excludefirst,pi_dens,q_dens,h,mu_hat,q_gamma,g_dens){ #q_dens is p*n, g_dens is (p-1)*n
+ if(sum(theta_excludefirst<0)>0||sum(theta_excludefirst)>0.999) return(list(value=Inf,gradient=Inf,hessian=Inf))
+ 
+ numb_g<-dim(g_dens)[1]
+ n0<-length(pi_dens)  
+ alpha_vec<-c(1-sum(theta_excludefirst),theta_excludefirst)
+ q_alpha<-t(alpha_vec)%*%q_dens
+ temp<-!((pi_dens==0)&(q_alpha==0))
+ pi_dens<-pi_dens[temp]
+ q_gamma<-q_gamma[temp]
+ g_dens<-g_dens[,temp]
+ q_alpha<-q_alpha[temp]
+ h<-h[temp]
+ #
+ cc1<-min(q_gamma)
+ q_gamma_temp<-q_gamma
+ q_gamma<-q_gamma/cc1
+ cc2<-median(pi_dens)
+ pi_dens_temp<-pi_dens
+ pi_dens<-pi_dens/cc2
+ #
+ f<-(h-mu_hat)*pi_dens
+ part1_beta<-g_dens*(rep(1,numb_g)%*%t(1/q_alpha))
+ part2_beta<-t(g_dens*(rep(1,numb_g)%*%t(1/q_gamma)))
+ B_inv<-solve(part1_beta%*%part2_beta)
+ B_inv_diag<-blockdiag(B_inv,numb_g)
+ #
+ part4_beta<-f/q_gamma
+ part5_beta<-part1_beta%*%part4_beta
+ beta_MLE<-B_inv%*%part5_beta
+ #
+ G<-g_dens
+ tau1<-(f-c(t(beta_MLE)%*%G))/q_alpha/q_gamma
+ tau2<-tau1/q_alpha
+ tau3<-tau1^2/q_alpha*q_gamma
+ G_tau1_diag<-blockdiag(G%*%tau1,numb_g)
+ #
+ q_alpha1<-1/q_alpha
+ q_alpha2_gamma<-1/q_alpha^2/q_gamma #could be Inf
+ C<-part5_beta
+ Cdiag<-blockdiag(C,numb_g)
+ B_inv_C_diag<-blockdiag(B_inv%*%C,numb_g)
+ G1<-(I_G1_1%*%(G*(rep(1,numb_g)%*%t(q_alpha1))))*(I_G1_2%*%G)
+ G2<-(t(G)%*%I_G2_1)*(((q_alpha2_gamma%*%t(rep(1,numb_g)))*t(G))%*%I_G2_2)
+ G3<-((f*q_alpha2_gamma)%*%t(rep(1,numb_g)))*t(G)
+ G4<-((f*q_alpha1)%*%t(rep(1,numb_g)))*t(G)
+ #
+ B_p<--G%*%G2
+ C_p<--G%*%G3
+ #
+ beta_gradient<-t(-B_inv%*%B_p%*%B_inv_C_diag+B_inv%*%C_p)
+ #
+ beta_hessian_sp1<-B_inv_diag%*%t(B_p)%*%B_inv%*%B_p%*%B_inv_diag
+ beta_hessian_sp2<-beta_hessian_sp1
+ beta_hessian_sp2[A1_index]<-beta_hessian_sp2[A1_re_index]
+ beta_hessian_part1<-beta_hessian_sp1%*%Cdiag
+ beta_hessian_part2<-beta_hessian_sp2%*%Cdiag
+ beta_hessian_part3<-2*B_inv_diag%*%G1%*%G2%*%B_inv_C_diag
+ beta_hessian_part4<-B_inv_diag%*%t(B_p)%*%B_inv%*%C_p
+ beta_hessian_part5<-beta_hessian_part4
+ beta_hessian_part5[A2_index]<-beta_hessian_part5[A2_re_index]
+ beta_hessian_part6<-2*B_inv_diag%*%t(G2)%*%G4
+ beta_hessian<-beta_hessian_part1+beta_hessian_part2-beta_hessian_part3-beta_hessian_part4-beta_hessian_part5+beta_hessian_part6
+
+ var_hessian_part1<-(G*(rep(1,numb_g)%*%t(tau3)))%*%t(G)*2/n0
+ var_hessian_part2<-((beta_gradient%*%G)*(rep(1,numb_g)%*%t(tau2)))%*%t(G)*2/n0
+ var_hessian_part3<-t(var_hessian_part2)
+ var_hessian_part4<-t(beta_hessian)%*%G_tau1_diag*2/n0
+ Z<-beta_gradient%*%G
+ var_hessian_part5<-(Z*(rep(1,numb_g)%*%t(1/q_alpha/q_gamma)))%*%t(Z)*2/n0
+ var_hessian<-as.matrix(var_hessian_part1+var_hessian_part2+var_hessian_part3-var_hessian_part4-var_hessian_part5)
+ 
+ var_hessian<-var_hessian/cc1
+ 
+ return(var_hessian)
+}
+var_MLE_hessian<-function(theta_excludefirst,pi_dens,q_dens,h_all,mu_hat_all,q_gamma,g_dens,fnscale){
+   # h is n0*length(rhos) matrix with each column being the indicator function of each VaR; mu_hat_all includse all rho for VaR; q_dens is numb_comp*n0 matrix; g_dens is numb_g*n matrix
+   numb_mu<-length(mu_hat_all)
+   numb_comp<-length(theta_excludefirst)+1
+   var_MLE_hessian_part<-list(0)
+   var_MLE_hessian_value<-0
+   for(i in 1:numb_mu){
+     var_MLE_hessian_part[[i]]<-partial_var_MLE_hessian(theta_excludefirst,pi_dens,q_dens,h_all[,i],mu_hat_all[i],q_gamma,g_dens)
+	 var_MLE_hessian_value<-var_MLE_hessian_value+var_MLE_hessian_part[[i]]
+   }
+   var_MLE_hessian_value<-var_MLE_hessian_value/(numb_mu*fnscale)
+   return(var_MLE_hessian_value)
+}
+
+loglik_neg_trust<-function(zeta,h_prop,g_vec){
+  # dens_all is n*p matrix, g_dens is n*(p-1) matrix
+  num_g<-dim(g_vec)[2]
+  q_alpha_zeta<-h_prop+g_vec%*%zeta
+  if(sum(q_alpha_zeta<0)>0) return(list(value=Inf,gradient=Inf,hessian=Inf))
+  l_funval<-sum(log(q_alpha_zeta))
+  temp<-g_vec/(q_alpha_zeta%*%t(rep(1,num_g)))
+  l_funval_der<-colSums(temp)
+  l_funval_hessian<--crossprod(temp)
+  return(list(value=-l_funval,gradient=-l_funval_der,hessian=-l_funval_hessian))
+ }
+MLE_mixture_p<-function(h_prop,g){
+   numb_g<-dim(g)[2]
+   minimizing_results<-trust(loglik_neg_trust,parinit=rep(0,numb_g),rinit=1,rmax=10,h_prop=h_prop,g_vec=g,iterlim = 10)
+   zeta_MLE<-minimizing_results$argument
+   return(zeta_MLE)
+}
+
+AdMit<-function(dimension,y_hist,h_ini,a_pars,n_t,df_t,max_step){ # The "Nelder-Mead" is costly, try to give the gradient function of AdMit_sample_weights and use "trust" or "BFGS", need modification
+   Time<-length(y_hist)-1; d_ahead<-0
+   #inistate<-c(0,0.8,0.1);
+
+   inistate<-c(0,0.184526,0.715474);
+   #inistate<-c(-3.087324,0,0.184526,0.715474);
+   #inistate<-c(2.3644340,5.5226237,0.1665309,0.2907468,0.6092532);
+   #inistate<-c(-6.3516406,-5.4911529,-1.8401861,-2.6684418,2.0706780,1.5721214,0.3286961,0.5713039) 
+   ui_matrix<-matrix(0,d_ahead+5,d_ahead+3)
+   ui_matrix[d_ahead+1,(d_ahead+2):(d_ahead+3)]<-rep(-1,2);
+   ui_matrix[(d_ahead+2):(d_ahead+3),(d_ahead+2)]<-c(-1,1);
+   ui_matrix[(d_ahead+4):(d_ahead+5),(d_ahead+3)]<-c(-1,1)
+   ci_vec<-c(rep(-1,d_ahead),-1,rep(c(-1,0),2)) 
+	step1_results<-constrOptim(theta=inistate,f=log_neg_targetdens,method="Nelder-Mead",ui=ui_matrix,ci=ci_vec,y_hist=y_hist,h_ini=h_ini,a_pars=a_pars)
+   mu_AdMit<-(step1_results$par)[d_ahead+1:3]
+   Sigma_AdMit_results<-solve(numericHessian(log_neg_targetdens,t0=step1_results$par,y_hist=y_hist,h_ini=h_ini,a_pars=a_pars))
+   Sigma_AdMit<-Sigma_AdMit_results[d_ahead+1:3,d_ahead+1:3] 
+   #Sigma_AdMit<-8*Sigma_AdMit
+   Sigma_AdMit[1,1]<-4*Sigma_AdMit[1,1] 
+   Sigma_AdMit[1,2:3]<-2*Sigma_AdMit[1,2:3]
+   Sigma_AdMit[2:3,1]<-2*Sigma_AdMit[2:3,1] 
+   return(list(mu_AdMit,Sigma_AdMit)) 
+}
+
+VaR_ISest<-function(x,rho_VaR,samp_weights){ # Estimate VaR
+   n<-length(x)
+   order_x<-order(x)
+   x_sort<-x[order_x]
+   normalized_samp_weights_sort<-samp_weights[order_x]/sum(samp_weights)
+   percent_est<-cumsum(normalized_samp_weights_sort)
+   temp<-percent_est-rho_VaR
+   temp_ind<-(1:n)[temp<0]
+   j<-max(temp_ind)
+   VaR<-x_sort[j]+(x_sort[j+1]-x_sort[j])/(percent_est[j+1]-percent_est[j])*(rho_VaR-percent_est[j])
+   return(VaR)
+}
+VaR_ARCH_stage1<-function(rhos,d_ahead,nt,y_hist,h_ini,a_pars,df_t,is_stage1){
+   # mu_comp is dimension*numb_q1, y_future are in front of the pars with the last y_t+p in the first
+   Time<-length(y_hist)-1 
+   dimension<-d_ahead+3
+   pars_prop<-AdMit(dimension,y_hist,h_ini,a_pars,nt,df_t,1)
+   mu_comp<-pars_prop[[1]]
+   Sigma_comp<-pars_prop[[2]]
+   numb_q1<-2
+   numb_comp<-numb_q1*(length(rhos)+2) 
+   n0_all<-rep(nt*numb_q1,length(rhos)+2)
+   n0<-sum(n0_all)
+   VaR_hat<-0; VaR_hat_adj<-0; qtrunc_dens<-matrix(0,n0,length(rhos))
+   comp_dens<-matrix(0,n0,numb_comp)
+   target_dens<-rep(0,n0)
+   samples_1stage<-matrix(0,n0,d_ahead+3)
+   h_all<-matrix(0,nt*numb_q1*(length(rhos)+2),length(rhos))
+   delta_lowbound_qt<-10^(-3)
+
+   # Generate samples of parameters and calculate parameter part of target dens
+   samples_1stage_pars_norm<-rmvnorm(sum(n0_all[c(1,3,4)]),mu_comp,Sigma_comp)
+   samples_1stage_pars_t<-cbind(rmvt(sum(n0_all[2]),delta=mu_comp[1],sigma=matrix(Sigma_comp[1,1]),df=df_t,type = "shifted"),rmvt(sum(n0_all[2]),delta=mu_comp[2],sigma=matrix(Sigma_comp[2,2]),df=df_t,type = "shifted"),rmvt(sum(n0_all[2]),delta=mu_comp[3],sigma=matrix(Sigma_comp[3,3]),df=df_t,type = "shifted"))
+   samples_1stage_pars<-rbind(samples_1stage_pars_norm[1:sum(n0_all[1]),],samples_1stage_pars_t,samples_1stage_pars_norm[(sum(n0_all[1])+1):sum(n0_all[c(1,3,4)]),])
+   samples_1stage[,(d_ahead+1):(d_ahead+3)]<-samples_1stage_pars
+   samples_1stage_pars_normdens<-dmvnorm(samples_1stage_pars,mu_comp,Sigma_comp)
+   samples_1stage_pars_tdens<-dt((samples_1stage_pars[,1]-mu_comp[1])/sqrt(Sigma_comp[1,1]),df=df_t)*dt((samples_1stage_pars[,2]-mu_comp[2])/sqrt(Sigma_comp[2,2]),df=df_t)*dt((samples_1stage_pars[,3]-mu_comp[3])/sqrt(Sigma_comp[3,3]),df=df_t)/sqrt(Sigma_comp[1,1]*Sigma_comp[2,2]*Sigma_comp[3,3])   
+   
+   pars_targ_dens_1stage<-exp((samples_1stage[,d_ahead+1]-a_pars[1])^2/(-2*a_pars[2]^2))   
+   
+   # Calculate h_T and calculate h_1:T part of target dens 
+   y2_hist<-y_hist^2
+   nonzero_ind<-(1:n0)[as.logical(rowProds2(samples_1stage_pars[,2:3]>0)*(rowSums(samples_1stage_pars[,2:3])<1))]
+   n0_nonzero<-length(nonzero_ind)
+   alpha0<-exp(samples_1stage_pars[,1]); alpha1<-abs(samples_1stage_pars[,2]); beta_par<-abs(samples_1stage_pars[,3])
+   partial_targ_dens_log_tmp<-rep(0,n0)  
+   for(i in 1:Time){     
+     if(i==1) H_current<-alpha0+alpha1*y_hist[1]^2+beta_par*h_ini
+	 if(i>1) H_current<-alpha0+alpha1*Y_old+beta_par*H_old
+	 Y_current<-y2_hist[i+1]
+	 partial_targ_dens_log_tmp<-partial_targ_dens_log_tmp-.5*(Y_current/H_current+log(H_current))
+	 H_old<-H_current
+	 Y_old<-Y_current
+    }
+   H_T<-alpha0+alpha1*Y_old+beta_par*H_old
+   infin_ind<-(1:n0)[!is.finite(H_T)]
+   if(length(infin_ind)>0) H_T[infin_ind]<-max(H_T[-infin_ind])
+  
+   partial_targ_dens_log_1stage<-rep(-Inf,n0)
+   partial_targ_dens_log_1stage[nonzero_ind]<-partial_targ_dens_log_tmp[nonzero_ind]
+   partial_targ_dens_1stage<-exp(partial_targ_dens_log_1stage)
+
+   # Generate y_future and Calculate densities
+   n_comp_vec<-matrix(0,nt,numb_comp)
+   for(i in 1:numb_comp) n_comp_vec[,i]<-((i-1)*nt+1):(i*nt)
+   norm_t_vec<-c(n_comp_vec[,1:4])
+   truncnorm_vec<-list(c(n_comp_vec[,5:6]))
+   truncnorm_vec[[2]]<-c(n_comp_vec[,7:8])
+   norm_t_trunc1_vec<-c(norm_t_vec,truncnorm_vec[[1]])
+   
+   samples_1stage[n_comp_vec[,1],1:d_ahead]<-y_comp_pred(nt,NULL,samples_1stage_pars[n_comp_vec[,1],],H_T[n_comp_vec[,1]],d_ahead,NULL,T,1)   
+   samples_1stage[n_comp_vec[,2],1:d_ahead]<-y_comp_pred(nt,NULL,samples_1stage_pars[n_comp_vec[,2],],H_T[n_comp_vec[,2]],d_ahead,NULL,T,2)
+   samples_1stage[n_comp_vec[,3],1:d_ahead]<-y_comp_pred(nt,NULL,samples_1stage_pars[n_comp_vec[,3],],H_T[n_comp_vec[,3]],d_ahead,NULL,T,1)
+   samples_1stage[n_comp_vec[,4],1:d_ahead]<-y_comp_pred(nt,NULL,samples_1stage_pars[n_comp_vec[,4],],H_T[n_comp_vec[,4]],d_ahead,NULL,T,2)
+   comp_dens_tmp<-y_comp_pred(NULL,samples_1stage[norm_t_vec,d_ahead:1],samples_1stage_pars[norm_t_vec,],H_T[norm_t_vec],d_ahead,NULL,F,1:2)
+   comp_dens[norm_t_vec,1:4]<-cbind(comp_dens_tmp,comp_dens_tmp)*cbind(samples_1stage_pars_normdens[norm_t_vec],samples_1stage_pars_normdens[norm_t_vec],samples_1stage_pars_tdens[norm_t_vec],samples_1stage_pars_tdens[norm_t_vec])
+   target_dens[norm_t_vec]<-comp_dens_tmp[,1]*partial_targ_dens_1stage[norm_t_vec]*pars_targ_dens_1stage[norm_t_vec]   
+   samples_weights_tmp<-4*target_dens[norm_t_vec]/(comp_dens[norm_t_vec,1:4]%*%rep(1,4))
+   zero_ind<-(1:(4*nt))[!is.finite(samples_weights_tmp)]
+   if(length(zero_ind)>0) samples_weights_tmp[zero_ind]<-0
+   
+   if(d_ahead>1) cum_logreturn<-c(samples_1stage[norm_t_vec,1:d_ahead]%*%rep(1,d_ahead))
+   if(d_ahead==1) cum_logreturn<-samples_1stage[norm_t_vec,1]
+   VaR_hat[1]<-VaR_ISest(cum_logreturn,rhos[1],samples_weights_tmp)
+   VaR_hat_adj[1]<-.8*VaR_hat[1]
+   samples_1stage[n_comp_vec[,5],1:d_ahead]<-y_comp_pred(nt,NULL,samples_1stage_pars[n_comp_vec[,5],],H_T[n_comp_vec[,5]],d_ahead,VaR_hat_adj[1],T,3)	 
+   samples_1stage[n_comp_vec[,6],1:d_ahead]<-y_comp_pred(nt,NULL,samples_1stage_pars[n_comp_vec[,6],],H_T[n_comp_vec[,6]],d_ahead,VaR_hat_adj[1],T,4)
+   comp_dens_tmp<-y_comp_pred(NULL,samples_1stage[truncnorm_vec[[1]],d_ahead:1],samples_1stage_pars[truncnorm_vec[[1]],],H_T[truncnorm_vec[[1]]],d_ahead,NULL,F,1:2)
+   comp_dens[truncnorm_vec[[1]],1:4]<-cbind(comp_dens_tmp,comp_dens_tmp)*cbind(samples_1stage_pars_normdens[truncnorm_vec[[1]]],samples_1stage_pars_normdens[truncnorm_vec[[1]]],samples_1stage_pars_tdens[truncnorm_vec[[1]]],samples_1stage_pars_tdens[truncnorm_vec[[1]]])
+   target_dens[truncnorm_vec[[1]]]<-comp_dens_tmp[,1]*partial_targ_dens_1stage[truncnorm_vec[[1]]]*pars_targ_dens_1stage[truncnorm_vec[[1]]]    
+   comp_dens_tmp<-y_comp_pred(NULL,samples_1stage[norm_t_trunc1_vec,d_ahead:1],samples_1stage_pars[norm_t_trunc1_vec,],H_T[norm_t_trunc1_vec],d_ahead,VaR_hat_adj[1],F,3:4)
+   comp_dens[norm_t_trunc1_vec,5:6]<-comp_dens_tmp*cbind(samples_1stage_pars_normdens[norm_t_trunc1_vec],samples_1stage_pars_normdens[norm_t_trunc1_vec])
+   samples_weights_tmp<-6*target_dens[norm_t_trunc1_vec]/(comp_dens[norm_t_trunc1_vec,1:6]%*%rep(1,6))
+   zero_ind<-(1:(6*nt))[!is.finite(samples_weights_tmp)]
+   if(length(zero_ind)>0) samples_weights_tmp[zero_ind]<-0
+      
+   if(d_ahead>1) cum_logreturn<-c(samples_1stage[norm_t_trunc1_vec,1:d_ahead]%*%rep(1,d_ahead))
+   if(d_ahead==1) cum_logreturn<-samples_1stage[norm_t_trunc1_vec,1]
+   VaR_hat[2]<-VaR_ISest(cum_logreturn,rhos[2],samples_weights_tmp)
+   VaR_hat_adj[2]<-.8*VaR_hat[2]
+   samples_1stage[n_comp_vec[,7],1:d_ahead]<-y_comp_pred(nt,NULL,samples_1stage_pars[n_comp_vec[,7],],H_T[n_comp_vec[,7]],d_ahead,VaR_hat_adj[2],T,3)	 
+   samples_1stage[n_comp_vec[,8],1:d_ahead]<-y_comp_pred(nt,NULL,samples_1stage_pars[n_comp_vec[,8],],H_T[n_comp_vec[,8]],d_ahead,VaR_hat_adj[2],T,4)
+   comp_dens_tmp<-y_comp_pred(NULL,samples_1stage[truncnorm_vec[[2]],d_ahead:1],samples_1stage_pars[truncnorm_vec[[2]],],H_T[truncnorm_vec[[2]]],d_ahead,VaR_hat_adj[1],F,1:4)
+   comp_dens[truncnorm_vec[[2]],1:6]<-cbind(comp_dens_tmp[,1:2],comp_dens_tmp)*cbind(samples_1stage_pars_normdens[truncnorm_vec[[2]]],samples_1stage_pars_normdens[truncnorm_vec[[2]]],samples_1stage_pars_tdens[truncnorm_vec[[2]]],samples_1stage_pars_tdens[truncnorm_vec[[2]]],samples_1stage_pars_normdens[truncnorm_vec[[2]]],samples_1stage_pars_normdens[truncnorm_vec[[2]]])
+   target_dens[truncnorm_vec[[2]]]<-comp_dens_tmp[,1]*partial_targ_dens_1stage[truncnorm_vec[[2]]]*pars_targ_dens_1stage[truncnorm_vec[[2]]]    
+   comp_dens_tmp<-y_comp_pred(NULL,samples_1stage[,d_ahead:1],samples_1stage_pars,H_T,d_ahead,VaR_hat_adj[2],F,3:4)
+   comp_dens[,7:8]<-comp_dens_tmp*cbind(samples_1stage_pars_normdens,samples_1stage_pars_normdens)
+   
+   g_dens<-t(comp_dens[,-1]-comp_dens[,1]%*%t(rep(1,numb_comp-1)))   
+   if(is_stage1==T){
+     ui_optim<-rbind(rep(-1,numb_comp-1),diag(rep(1,numb_comp-1)))
+     ci_optim<-c(-1,rep(0,numb_q1-1),rep(delta_lowbound_qt,numb_q1),rep(0,numb_q1*length(rhos)))
+     if(d_ahead>1) cum_logreturn<-c(samples_1stage[,1:d_ahead]%*%rep(1,d_ahead))
+     if(d_ahead==1) cum_logreturn<-samples_1stage[,1]
+     for(i in 1:length(rhos)) h_all[,i]<-(cum_logreturn<=VaR_hat[i])*1
+     gamma_vec<-rep(1,numb_comp)/numb_comp
+     gamma_vec_excludefirst<-gamma_vec[-1]
+     q_gamma<-comp_dens%*%gamma_vec
+     var_scale<-var_MLE(gamma_vec_excludefirst,target_dens,t(comp_dens),h_all,rhos,q_gamma,g_dens,1)
+      
+	theta_hat_results<-constrOptim(theta=gamma_vec_excludefirst,f=var_MLE,grad=var_MLE_gradient,method="BFGS",ui=ui_optim,ci=ci_optim,pi_dens=target_dens,q_dens=t(comp_dens),h_all=h_all,mu_hat_all=rhos,q_gamma=q_gamma,g_dens=g_dens,fnscale=var_scale,control=list(reltol=1e-05))
+     theta_excludefirst<-theta_hat_results$par
+     theta_hat<-c(1-sum(theta_excludefirst),theta_excludefirst)
+	 alpha_sd=0
+   }
+   if(is_stage1==F){
+     theta_hat<-rep(1,numb_comp)/numb_comp
+	 alpha_sd=0
+	}
+	return(list(theta_hat,VaR_hat,mu_comp,Sigma_comp,comp_dens,target_dens,g_dens,samples_1stage,n0,alpha_sd))
+} 
+VaR_ARCH_twostage<-function(n,d_ahead,rhos,nt,y_hist,h_ini,a_pars,df_t){
+   stage1_results<-VaR_ARCH_stage1(rhos,d_ahead,nt,y_hist,h_ini,a_pars,df_t,T)
+   Time<-length(y_hist)-1
+   theta_hat<-stage1_results[[1]]
+   VaR_hat_stage1<-stage1_results[[2]]
+   VaR_hat_adj<-.8*VaR_hat_stage1 
+   mu_comp<-stage1_results[[3]]
+   Sigma_comp<-stage1_results[[4]]
+   comp_dens_stage1<-stage1_results[[5]]
+   target_dens_stage1<-stage1_results[[6]]
+   g_dens_stage1<-t(stage1_results[[7]])
+   samples_stage1<-stage1_results[[8]]
+   n0<-stage1_results[[9]]
+   numb_q1<-2
+   dimension<-d_ahead+3
+   numb_comp<-numb_q1*(length(rhos)+2)
+   gamma_vec<-rep(1,numb_comp)/numb_comp
+   comp_ind_vec<-matrix(0,length(rhos)+2,numb_q1)
+   for(i in 1:(length(rhos)+2)) comp_ind_vec[i,]<-((i-1)*numb_q1+1):(i*numb_q1)
+   VaR_hat<-0
+   pars_hat<-rep(0,3)
+   
+   # Stage2 sampling
+   samples_stage2<-matrix(0,n-n0,dimension)
+   comp_dens_stage2<-matrix(0,n-n0,numb_comp)
+   # Determine the sample sizes needed and corresponding mixture proportions for each mixture of numb_q1 components
+   n_comp<-0; theta_hat_comp<-matrix(0,length(rhos)+2,numb_q1)
+   for(i in 1:(length(rhos)+2)){
+	 n_comp[i]<-floor((n-n0)*sum(theta_hat[comp_ind_vec[i,]]))
+	 theta_hat_comp[i,]<-theta_hat[comp_ind_vec[i,]]
+   }
+   n_comp<-c(n-n0-sum(n_comp[-1]),n_comp[-1])
+
+   # Generate samples of parameters and calculate parameter part of target dens
+   samples_stage2_pars_norm<-rmvnorm(sum(n_comp[c(1,3,4)]),mu_comp,Sigma_comp)
+   samples_stage2_pars_t<-cbind(rmvt(sum(n_comp[2]),delta=mu_comp[1],sigma=matrix(Sigma_comp[1,1]),df=df_t,type = "shifted"),rmvt(sum(n_comp[2]),delta=mu_comp[2],sigma=matrix(Sigma_comp[2,2]),df=df_t,type = "shifted"),rmvt(sum(n_comp[2]),delta=mu_comp[3],sigma=matrix(Sigma_comp[3,3]),df=df_t,type = "shifted"))
+   samples_stage2_pars<-rbind(samples_stage2_pars_norm[1:(n_comp[1]),],samples_stage2_pars_t,samples_stage2_pars_norm[(sum(n_comp[1])+1):sum(n_comp[c(1,3,4)]),])
+   samples_stage2[,(d_ahead+1):(d_ahead+3)]<-samples_stage2_pars
+   samples_stage2_pars_normdens<-dmvnorm(samples_stage2_pars,mu_comp,Sigma_comp)
+   samples_stage2_pars_tdens<-dt((samples_stage2_pars[,1]-mu_comp[1])/sqrt(Sigma_comp[1,1]),df=df_t)*dt((samples_stage2_pars[,2]-mu_comp[2])/sqrt(Sigma_comp[2,2]),df=df_t)*dt((samples_stage2_pars[,3]-mu_comp[3])/sqrt(Sigma_comp[3,3]),df=df_t)/sqrt(Sigma_comp[1,1]*Sigma_comp[2,2]*Sigma_comp[3,3])
+   pars_targ_dens<-exp((samples_stage2[,d_ahead+1]-a_pars[1])^2/(-2*a_pars[2]^2))   
+
+   # Calculate h_T and calculate h_1:T part of target dens 
+   y2_hist<-y_hist^2
+   nonzero_ind<-(1:(n-n0))[as.logical(rowProds2(samples_stage2_pars[,2:3]>0)*(rowSums(samples_stage2_pars[,2:3])<1))]
+   n_nonzero<-length(nonzero_ind)
+   alpha0<-exp(samples_stage2_pars[,1]); alpha1<-abs(samples_stage2_pars[,2]); beta_par<-abs(samples_stage2_pars[,3])
+   partial_targ_dens_log_tmp<-rep(0,n-n0)  
+   for(i in 1:Time){     
+     if(i==1) H_current<-alpha0+alpha1*y_hist[1]^2+beta_par*h_ini
+	 if(i>1) H_current<-alpha0+alpha1*Y_old+beta_par*H_old
+	 Y_current<-y2_hist[i+1]
+	 partial_targ_dens_log_tmp<-partial_targ_dens_log_tmp-.5*(Y_current/H_current+log(H_current))
+	 H_old<-H_current
+	 Y_old<-Y_current
+    }
+   H_T<-alpha0+alpha1*Y_old+beta_par*H_old
+   infin_ind<-(1:(n-n0))[!is.finite(H_T)]
+   if(length(infin_ind)>0) H_T[infin_ind]<-max(H_T[-infin_ind])
+   
+   partial_targ_dens_log<-rep(-Inf,n-n0)
+   partial_targ_dens_log[nonzero_ind]<-partial_targ_dens_log_tmp[nonzero_ind]
+   partial_targ_dens<-exp(partial_targ_dens_log)
+   
+   # Generate y_future and Calculate densities 
+   sampling_results<-y_comp_pred_allcomp(n-n0,NULL,samples_stage2_pars,theta_hat,H_T,d_ahead,VaR_hat_adj,T)
+   samples_stage2[,1:d_ahead]<-sampling_results[[1]]
+   comp_dens_stage2<-sampling_results[[2]]*cbind(samples_stage2_pars_normdens,samples_stage2_pars_normdens,samples_stage2_pars_tdens,samples_stage2_pars_tdens,samples_stage2_pars_normdens,samples_stage2_pars_normdens,samples_stage2_pars_normdens,samples_stage2_pars_normdens)
+   
+   # Calculate the MLE weights
+   g_dens_stage2<-comp_dens_stage2[,-1]-comp_dens_stage2[,1]%*%t(rep(1,numb_comp-1))   
+   comp_dens<-rbind(comp_dens_stage1,comp_dens_stage2)
+   g_dens<-rbind(g_dens_stage1,g_dens_stage2)
+   theta_tilde<-n0/n*gamma_vec+(n-n0)/n*theta_hat
+   q_theta_tilde<-comp_dens%*%theta_tilde
+   NA_ind<-(1:n)[!is.finite(q_theta_tilde)]
+   if(length(NA_ind)>0) q_theta_tilde[NA_ind]<-0
+   zero_ind<-(1:n)[q_theta_tilde==0]
+   if(length(zero_ind)>0){
+     q_theta_tilde_adj<-q_theta_tilde[-zero_ind]
+     g_dens_adj<-g_dens[-zero_ind,] 
+   }
+   if(length(zero_ind)==0){
+     q_theta_tilde_adj<-q_theta_tilde
+     g_dens_adj<-g_dens
+   }
+   zeta_MLE<-MLE_mixture_p(q_theta_tilde_adj,g_dens_adj) 
+    
+   # Calculate the samples weights
+   target_dens_stage2<-sampling_results[[2]][,1]*partial_targ_dens*pars_targ_dens
+   target_dens<-c(target_dens_stage1,target_dens_stage2)
+   if(length(zero_ind)>0) target_dens_adj<-target_dens[-zero_ind]
+   if(length(zero_ind)==0) target_dens_adj<-target_dens 
+   weights_sample_MLE<-target_dens_adj/(q_theta_tilde_adj+g_dens_adj%*%zeta_MLE)
+   
+   # Point estimate
+   samples_all<-rbind(samples_stage1,samples_stage2)
+   if(d_ahead>1) cum_logreturn<-c(samples_all[,1:d_ahead]%*%rep(1,d_ahead))
+   if(d_ahead==1) cum_logreturn<-samples_all[,1]
+   if(length(zero_ind)>0){
+      for(i in 1:length(rhos)) VaR_hat[i]<-VaR_ISest(cum_logreturn[-zero_ind],rhos[i],weights_sample_MLE)
+ 	  for(k in 1:3) pars_hat[k]<-sum(samples_all[-zero_ind,d_ahead+k]*weights_sample_MLE)/sum(weights_sample_MLE)     
+   }
+   if(length(zero_ind)==0){
+      for(i in 1:length(rhos)) VaR_hat[i]<-VaR_ISest(cum_logreturn,rhos[i],weights_sample_MLE)
+      for(k in 1:3) pars_hat[k]<-sum(samples_all[,d_ahead+k]*weights_sample_MLE)/sum(weights_sample_MLE) 
+   }
+   return(list(VaR_hat,theta_hat,pars_hat,zeta_MLE,mu_comp,Sigma_comp,VaR_hat_stage1))
+}
+VaR_ARCH_onestage<-function(n,d_ahead,rhos,nt,y_hist,h_ini,a_pars,df_t){
+   stage1_results<-VaR_ARCH_stage1(rhos,d_ahead,nt,y_hist,h_ini,a_pars,df_t,F)
+   Time<-length(y_hist)-1
+   theta_hat<-stage1_results[[1]]
+   VaR_hat_stage1<-stage1_results[[2]]
+   VaR_hat_adj<-.8*VaR_hat_stage1
+   mu_comp<-stage1_results[[3]]
+   Sigma_comp<-stage1_results[[4]]
+   comp_dens_stage1<-stage1_results[[5]]
+   target_dens_stage1<-stage1_results[[6]]
+   g_dens_stage1<-t(stage1_results[[7]])
+   samples_stage1<-stage1_results[[8]]
+   n0<-stage1_results[[9]]
+   numb_q1<-2
+   dimension<-d_ahead+3
+   numb_comp<-numb_q1*(length(rhos)+2)
+   gamma_vec<-rep(1,numb_comp)/numb_comp
+   comp_ind_vec<-matrix(0,length(rhos)+2,numb_q1)
+   for(i in 1:(length(rhos)+2)) comp_ind_vec[i,]<-((i-1)*numb_q1+1):(i*numb_q1)
+   VaR_hat<-0
+   pars_hat<-rep(0,3)	
+
+   # Stage2 sampling
+   samples_stage2<-matrix(0,n-n0,dimension)
+   comp_dens_stage2<-matrix(0,n-n0,numb_comp)
+   # Determine the sample sizes needed and corresponding mixture proportions for each mixture of numb_q1 components
+   n_comp<-0; theta_hat_comp<-matrix(0,length(rhos)+2,numb_q1)
+   for(i in 1:(length(rhos)+2)){
+	 n_comp[i]<-floor((n-n0)*sum(theta_hat[comp_ind_vec[i,]]))
+	 theta_hat_comp[i,]<-theta_hat[comp_ind_vec[i,]]
+   }
+   n_comp<-c(n-n0-sum(n_comp[-1]),n_comp[-1])
+
+   # Generate samples of parameters and calculate parameter part of target dens
+   samples_stage2_pars_norm<-rmvnorm(sum(n_comp[c(1,3,4)]),mu_comp,Sigma_comp)
+   samples_stage2_pars_t<-cbind(rmvt(sum(n_comp[2]),delta=mu_comp[1],sigma=matrix(Sigma_comp[1,1]),df=df_t,type = "shifted"),rmvt(sum(n_comp[2]),delta=mu_comp[2],sigma=matrix(Sigma_comp[2,2]),df=df_t,type = "shifted"),rmvt(sum(n_comp[2]),delta=mu_comp[3],sigma=matrix(Sigma_comp[3,3]),df=df_t,type = "shifted"))
+   samples_stage2_pars<-rbind(samples_stage2_pars_norm[1:(n_comp[1]),],samples_stage2_pars_t,samples_stage2_pars_norm[(sum(n_comp[1])+1):sum(n_comp[c(1,3,4)]),])
+   samples_stage2[,(d_ahead+1):(d_ahead+3)]<-samples_stage2_pars
+   samples_stage2_pars_normdens<-dmvnorm(samples_stage2_pars,mu_comp,Sigma_comp)
+   samples_stage2_pars_tdens<-dt((samples_stage2_pars[,1]-mu_comp[1])/sqrt(Sigma_comp[1,1]),df=df_t)*dt((samples_stage2_pars[,2]-mu_comp[2])/sqrt(Sigma_comp[2,2]),df=df_t)*dt((samples_stage2_pars[,3]-mu_comp[3])/sqrt(Sigma_comp[3,3]),df=df_t)/sqrt(Sigma_comp[1,1]*Sigma_comp[2,2]*Sigma_comp[3,3])
+   pars_targ_dens<-exp((samples_stage2[,d_ahead+1]-a_pars[1])^2/(-2*a_pars[2]^2))   
+
+   # Calculate h_T and calculate h_1:T part of target dens 
+   y2_hist<-y_hist^2
+   nonzero_ind<-(1:(n-n0))[as.logical(rowProds2(samples_stage2_pars[,2:3]>0)*(rowSums(samples_stage2_pars[,2:3])<1))]
+   n_nonzero<-length(nonzero_ind)
+   alpha0<-exp(samples_stage2_pars[,1]); alpha1<-abs(samples_stage2_pars[,2]); beta_par<-abs(samples_stage2_pars[,3])
+   partial_targ_dens_log_tmp<-rep(0,n-n0)  
+   for(i in 1:Time){     
+     if(i==1) H_current<-alpha0+alpha1*y_hist[1]^2+beta_par*h_ini
+	 if(i>1) H_current<-alpha0+alpha1*Y_old+beta_par*H_old
+	 Y_current<-y2_hist[i+1]
+	 partial_targ_dens_log_tmp<-partial_targ_dens_log_tmp-.5*(Y_current/H_current+log(H_current))
+	 H_old<-H_current
+	 Y_old<-Y_current
+    }
+   H_T<-alpha0+alpha1*Y_old+beta_par*H_old
+   infin_ind<-(1:(n-n0))[!is.finite(H_T)]
+   if(length(infin_ind)>0) H_T[infin_ind]<-max(H_T[-infin_ind])
+   
+   partial_targ_dens_log<-rep(-Inf,n-n0)
+   partial_targ_dens_log[nonzero_ind]<-partial_targ_dens_log_tmp[nonzero_ind]
+   partial_targ_dens<-exp(partial_targ_dens_log)
+   
+   # Generate y_future and Calculate densities 
+   sampling_results<-y_comp_pred_allcomp(n-n0,NULL,samples_stage2_pars,theta_hat,H_T,d_ahead,VaR_hat_adj,T)
+   samples_stage2[,1:d_ahead]<-sampling_results[[1]]
+   comp_dens_stage2<-sampling_results[[2]]*cbind(samples_stage2_pars_normdens,samples_stage2_pars_normdens,samples_stage2_pars_tdens,samples_stage2_pars_tdens,samples_stage2_pars_normdens,samples_stage2_pars_normdens,samples_stage2_pars_normdens,samples_stage2_pars_normdens)
+   
+   # Calculate the MLE weights
+   g_dens_stage2<-comp_dens_stage2[,-1]-comp_dens_stage2[,1]%*%t(rep(1,numb_comp-1))   
+   comp_dens<-rbind(comp_dens_stage1,comp_dens_stage2)
+   g_dens<-rbind(g_dens_stage1,g_dens_stage2)
+   theta_tilde<-n0/n*gamma_vec+(n-n0)/n*theta_hat
+   q_theta_tilde<-comp_dens%*%theta_tilde
+   NA_ind<-(1:n)[!is.finite(q_theta_tilde)]
+   if(length(NA_ind)>0) q_theta_tilde[NA_ind]<-0
+   zero_ind<-(1:n)[q_theta_tilde==0]
+   if(length(zero_ind)>0){
+     q_theta_tilde_adj<-q_theta_tilde[-zero_ind]
+     g_dens_adj<-g_dens[-zero_ind,] 
+   }
+   if(length(zero_ind)==0){
+     q_theta_tilde_adj<-q_theta_tilde
+     g_dens_adj<-g_dens
+   }
+   zeta_MLE<-MLE_mixture_p(q_theta_tilde_adj,g_dens_adj) 
+    
+   # Calculate the samples weights
+   target_dens_stage2<-sampling_results[[2]][,1]*partial_targ_dens*pars_targ_dens  
+   target_dens<-c(target_dens_stage1,target_dens_stage2)
+   if(length(zero_ind)>0) target_dens_adj<-target_dens[-zero_ind]
+   if(length(zero_ind)==0) target_dens_adj<-target_dens 
+   weights_sample_MLE<-target_dens_adj/(q_theta_tilde_adj+g_dens_adj%*%zeta_MLE)
+   
+   # Point estimate
+   samples_all<-rbind(samples_stage1,samples_stage2)
+   if(d_ahead>1) cum_logreturn<-c(samples_all[,1:d_ahead]%*%rep(1,d_ahead))  
+   if(d_ahead==1) cum_logreturn<-samples_all[,1]
+   if(length(zero_ind)>0){
+      for(i in 1:length(rhos)) VaR_hat[i]<-VaR_ISest(cum_logreturn[-zero_ind],rhos[i],weights_sample_MLE)
+ 	  for(k in 1:3) pars_hat[k]<-sum(samples_all[-zero_ind,d_ahead+k]*weights_sample_MLE)/sum(weights_sample_MLE)     
+   }
+   if(length(zero_ind)==0){
+      for(i in 1:length(rhos)) VaR_hat[i]<-VaR_ISest(cum_logreturn,rhos[i],weights_sample_MLE)
+      for(k in 1:3) pars_hat[k]<-sum(samples_all[,d_ahead+k]*weights_sample_MLE)/sum(weights_sample_MLE) 
+   }
+ #browser()  
+   return(list(VaR_hat,theta_hat,pars_hat,zeta_MLE,mu_comp,Sigma_comp,VaR_hat_stage1))
+}
+
+##############################
+# One, two and five days VaR
+##############################
+nt<-1e+4; n<-4e+6; a_pars<-c(-1,2); h_ini<-sd(y_hist)
+rhos<-c(.05,.01); MLE_twostage_results<-list(0)
+{d_ahead<-1; replic<-10
+# two stage
+Rprof("runtime.out")
+x11();plot(0,0,xlim=c(0,replic),ylim=c(0,replic))
+for(i in 1:replic) {set.seed(200+i);MLE_twostage_results[[i]]<-VaR_ARCH_twostage(n,d_ahead,rhos,nt,y_hist,h_ini,a_pars,df_t=1);points(i,i,pch=20)} 
+Rprof(NULL)
+summaryRprof("runtime.out")
+# one stage
+for(i in 1:replic) {set.seed(200+i);MLE_onestage_results[[i]]<-VaR_ARCH_onestage(n,d_ahead,rhos,nt,y_hist,h_ini,a_pars,df_t=1)}
+}
+save.image("1ahead_GARCH_twostage")
+save.image("1ahead_GARCH_onestage")
+
+{d_ahead<-2; replic<-300
+# two stage
+x11();plot(0,0,xlim=c(0,replic),ylim=c(0,replic))
+for(i in 1:replic) {set.seed(200+i);MLE_twostage_results[[i]]<-VaR_ARCH_twostage(n,d_ahead,rhos,nt,y_hist,h_ini,a_pars,df_t=1);points(i,i,pch=20)}
+# one stage
+for(i in 1:replic) {set.seed(200+i);MLE_onestage_results[[i]]<-VaR_ARCH_onestage(n,d_ahead,rhos,nt,y_hist,h_ini,a_pars,df_t=1)}
+}
+save.image("2ahead_GARCH_twostage")
+save.image("2ahead_GARCH_onestage")
+
+{d_ahead<-5; replic<-300
+# two stage
+x11();plot(0,0,xlim=c(0,replic),ylim=c(0,replic))
+for(i in 1:replic) {set.seed(200+i);MLE_twostage_results[[i]]<-VaR_ARCH_twostage(n,d_ahead,rhos,nt,y_hist,h_ini,a_pars,df_t=1);points(i,i,pch=20)}
+# one stage 
+for(i in 1:replic) {set.seed(200+i);MLE_onestage_results[[i]]<-VaR_ARCH_onestage(n,d_ahead,rhos,nt,y_hist,h_ini,a_pars,df_t=1)}
+}
+save.image("5ahead_GARCH_twostage")
+save.image("5ahead_GARCH_onestage")
+
+VaR_twostage<-list(0); VaR_onestage<-list(0)
+load("1ahead_GARCH_twostage")
+VaR_twostage[[1]]<-MLE_twostage_results
+load("1ahead_GARCH_onestage")
+VaR_onestage[[1]]<-MLE_onestage_results
+load("2ahead_GARCH_twostage")
+VaR_twostage[[2]]<-MLE_twostage_results
+load("2ahead_GARCH_onestage")
+VaR_onestage[[2]]<-MLE_onestage_results
+load("5ahead_GARCH_twostage")
+VaR_twostage[[3]]<-MLE_twostage_results
+load("5ahead_GARCH_onestage")
+VaR_onestage[[3]]<-MLE_onestage_results
+
+
+replic<-40; results<-list(0)
+VaR_results_twostage<-list(matrix(0,replic,2),matrix(0,replic,2),matrix(0,replic,2))
+VaR_results_onestage<-list(matrix(0,replic,2),matrix(0,replic,2),matrix(0,replic,2))
+theta_hat_all_twostage<-list(NULL,NULL,NULL)
+VaR_stage1<-matrix(0,replic,2)
+for(k in 1:3){
+  for(i in 1:replic){
+    VaR_results_twostage[[k]][i,1]<-VaR_twostage[[k]][[i]][[1]][1]
+    VaR_results_twostage[[k]][i,2]<-VaR_twostage[[k]][[i]][[1]][2]
+    theta_hat_all_twostage[[k]]<-rbind(theta_hat_all_twostage[[k]],VaR_twostage[[k]][[i]][[2]])
+    #VaR_results_onestage[[k]][i,1]<-VaR_onestage[[k]][[i]][[1]][1]
+    #VaR_results_onestage[[k]][i,2]<-VaR_onestage[[k]][[i]][[1]][2]
+  }
+  results[[k]]<-rbind(apply(VaR_results_twostage[[k]],2,mean),apply(VaR_results_onestage[[k]],2,mean),apply(VaR_results_twostage[[k]],2,var),apply(VaR_results_onestage[[k]],2,var))
+  colnames(results[[k]])<-list("VaR1","VaR2")
+  rownames(results[[k]])<-list("mean_twostage","mean_onestage","var_twostage","var_onestage")
+}
+names(results)<-list("1day","2days","5days")
+results
+  
