@@ -7,6 +7,3861 @@ library(maxLik)
 library(weights)
 library(trust)
 
+##############################
+# Common functions and values
+{##############################
+colProd<-function(x){ # input a m*n matrix
+ ncol_x<-dim(x)[2]; nrow_x<-dim(x)[1]
+ results_prod<-rep(1,nrow_x)
+ for(i in 1:ncol_x) results_prod<-results_prod*x[,i]
+ return(results_prod)
+}
+
+# Estimating MLE var using IS
+var_MLE_est<-function(alpha,q1_dens,q2_dens,pi_dens,q_gamma,g_dens){ 
+ alpha1<-alpha
+ alpha2<-1-alpha
+ 
+ q_alpha<-alpha1*q1_dens+alpha2*q2_dens
+ temp<-!((pi_dens==0)&(q_alpha==0))
+ if(length(temp)>0){
+ 	 pi_dens<-pi_dens[temp]
+	 q_gamma<-q_gamma[temp]
+ 	 q_alpha<-q_alpha[temp]
+ 	 g_dens<-g_dens[temp]
+ }
+ 
+ pi_over_gamma<-pi_dens/q_gamma
+ pi_over_alpha<-pi_dens/q_alpha
+ g_over_gamma<-g_dens/q_gamma
+ g_over_alpha<-g_dens/q_alpha
+ 
+ var_MLE_value<-mean(pi_over_gamma*pi_over_alpha)-mean(pi_over_alpha*g_over_gamma)^2/mean(g_over_gamma*g_over_alpha) 
+ return(var_MLE_value)
+}
+
+var_MLE_expec_est<-function(alpha,h,mu_hat,q1_dens,q2_dens,pi_dens,q_gamma,g_dens,beta_output){ 
+ alpha1<-alpha
+ alpha2<-1-alpha
+ 
+ q_alpha<-alpha1*q1_dens+alpha2*q2_dens
+ temp<-!((pi_dens==0)&(q_alpha==0))
+ pi_dens<-pi_dens[temp]
+ q_gamma<-q_gamma[temp]
+ q_alpha<-q_alpha[temp]
+ g_dens<-g_dens[temp]
+
+ beta_MLE<-mean((h-mu_hat)*pi_dens*g_dens/q_alpha/q_gamma)/mean(g_dens^2/q_alpha/q_gamma)
+ var_MLE_value<-mean(((h-mu_hat)*pi_dens-beta_MLE*g_dens)^2/q_alpha/q_gamma)
+ 
+ if(beta_output) return(list(var_MLE_value,beta_MLE))
+ if(!beta_output) return(var_MLE_value)
+}
+
+var_DIS_est<-function(alpha,q1_dens,q2_dens,pi_dens,q_gamma,n1){ 
+ alpha1<-alpha
+ alpha2<-1-alpha
+ n<-length(pi_dens)
+ 
+ if(n1>1) q_alpha<-alpha1*q1_dens+alpha2*q2_dens
+ if(n1<=1) q_alpha<-q2_dens 
+ temp<-!((pi_dens==0)&(q_alpha==0))
+ pi_dens<-pi_dens[temp]
+ q_gamma<-q_gamma[temp]
+ q_alpha<-q_alpha[temp]
+ 
+ #var_DIS_value<-mean(pi_dens^2/q_alpha/q_gamma)
+ if(n1>1) var_DIS_value<-alpha1*var((pi_dens/q_alpha)[1:n1])+alpha2*var((pi_dens/q_alpha)[(n1+1):n])
+ if(n1<=1) var_DIS_value<-var(pi_dens/q_alpha)
+ 
+ return(var_DIS_value)
+}
+
+var_DIS_expec_est<-function(alpha,h,mu_hat,q1_dens,q2_dens,pi_dens,q_gamma,n1){ 
+ alpha1<-alpha
+ alpha2<-1-alpha
+ n<-length(pi_dens)
+ 
+ if(n1>1) q_alpha<-alpha1*q1_dens+alpha2*q2_dens
+ if(n1<=1) q_alpha<-q2_dens 
+ temp<-!((pi_dens==0)&(q_alpha==0))
+ pi_dens<-pi_dens[temp]
+ q_gamma<-q_gamma[temp]
+ q_alpha<-q_alpha[temp]
+ 
+ if(n1>1) var_DIS_value<-alpha1*var(((h-mu_hat)*pi_dens/q_alpha)[1:n1])+alpha2*var(((h-mu_hat)*pi_dens/q_alpha)[(n1+1):n])
+ if(n1<=1) var_DIS_value<-var((h-mu_hat)*pi_dens/q_alpha)
+
+ return(var_DIS_value)
+}
+
+# Estimating MLE var using IID
+var_MLE_est_1<-function(alpha,q1_dens,q2_dens,pi_dens,q_gamma,g_dens,beta_output,n1){ 
+ alpha1<-alpha
+ alpha2<-1-alpha
+ 
+ q_alpha<-alpha1*q1_dens+alpha2*q2_dens
+ temp<-!((pi_dens==0)&(q_alpha==0))
+ pi_dens<-pi_dens[temp]
+ q_gamma<-q_gamma[temp]
+ q_alpha<-q_alpha[temp]
+ g_dens<-g_dens[temp]
+ 
+ beta_MLE<-(alpha1*mean((pi_dens*g_dens/q_alpha^2)[1:n1])+alpha2*mean((pi_dens*g_dens/q_alpha^2)[(n1+1):n]))/(alpha1*mean((g_dens^2/q_alpha^2)[1:n1])+alpha2*mean((g_dens^2/q_alpha^2)[(n1+1):n]))
+ var_MLE_value<-alpha1*mean(((pi_dens-beta_MLE*g_dens)/q_alpha)[1:n1]^2)+alpha2*mean(((pi_dens-beta_MLE*g_dens)/q_alpha)[(n1+1):n]^2)
+
+ if(beta_output) return(list(var_MLE_value,beta_MLE))
+ if(!beta_output) return(var_MLE_value)
+}
+
+# Calculating densities
+t_dens_joint<-function(x,mu_t,df_t){
+  joint_dens_log<-log(1+(x-mu_t)^2/df_t)*(-(df_t+1)/2)+log(gamma((df_t+1)/2))-log(df_t*pi)/2-log(gamma(df_t/2))
+  joint_dens<-colProd(exp(joint_dens_log))
+  return(joint_dens)
+}
+
+norm_dens_joint<-function(x,mu_norm,sigma_norm){
+  n<-dim(x)[1]
+  joint_dens_log<-(x-rep(1,n)%*%t(mu_norm))^2/(-2*sigma_norm^2)-log(2*pi)/2-log(sigma_norm)
+  joint_dens<-colProd(exp(joint_dens_log))
+  return(joint_dens)
+}
+
+pi_dens_joint<-function(x,mu_norm_pi,sigma_norm_pi,mu_t_pi,df_t_pi,alpha_pi,target_component){
+
+ if(target_component==1){
+  # normal target
+   pi_dens<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+ }
+
+ if(target_component==2){
+  # target normal dens  
+  pi_dens_part1<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+  # target t dens  
+  pi_dens_part2<-t_dens_joint(x,mu_t_pi,df_t_pi)
+  # mixture target
+  pi_dens<-alpha_pi*pi_dens_part1+(1-alpha_pi)*pi_dens_part2
+ }
+ 
+ return(pi_dens)
+}
+
+# MLE likelihood
+l_fun_neg<-function(zeta,dens_all,prop){
+  q1_dens<-dens_all[[1]]; q2_dens<-dens_all[[2]]
+  if(sum((prop-zeta)*q1_dens+(1-prop+zeta)*q2_dens<0)>0) return(Inf)
+  l_funval<-sum(log((prop-zeta)*q1_dens+(1-prop+zeta)*q2_dens))
+  return(-l_funval)
+}
+
+delta_lowbound<-10^(-3)
+}
+
+##########################################
+# asymptotic performance A1
+{##########################################
+mu_norm_pi<-rep(0,10); sigma_norm_pi<-rep(1,10);
+mu_norm_q2<-rep(0,10); sigma_norm_q2<-rep(1.1,10); 
+mu_t_q1<-0; df_t_q1<-1
+
+n=2000000; dimension<-10; replic<-10
+
+var_half_DIS<-list(0)
+alpha_opt_DIS<-list(0)
+var_opt_DIS<-list(0)
+var_0_DIS<-list(0)
+var_half_MLE<-list(0)
+alpha_opt_MLE<-list(0)
+var_opt_MLE<-list(0)
+
+gamma_vec<-c(0.5,0.5)
+ n1<-n*gamma_vec[1]
+ n2<-n*gamma_vec[2]
+
+save.time<-proc.time()
+for(i in 1:replic){
+ x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)  
+ x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+ data_all<-list(0,0)
+ data_all[[1]]<-x1
+ data_all[[2]]<-x2
+
+ aa1<-as.matrix(data_all[[1]][1:n1,])
+ aa2<-as.matrix(data_all[[2]][1:n2,])
+ 
+ # proposal t dens
+ q1_dens<-t_dens_joint(rbind(aa1,aa2),mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(rbind(aa1,aa2),mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens<-norm_dens_joint(rbind(aa1,aa2),mu_norm_pi,sigma_norm_pi)
+
+ q_gamma<-gamma_vec[1]*q1_dens+gamma_vec[2]*q2_dens
+ g_dens<-q2_dens-q1_dens
+ 
+
+ var_half_DIS_results<-var_DIS_est(.5,q1_dens,q2_dens,pi_dens,q_gamma,n1)
+ var_half_DIS[[i]]<-var_half_DIS_results
+
+ alpha_results_DIS<-optimize(var_DIS_est,interval=c(delta_lowbound,1),q1_dens=q1_dens,q2_dens=q2_dens,pi_dens=pi_dens,q_gamma=q_gamma,n1=n1)
+ alpha_opt_DIS[[i]]<-alpha_results_DIS$minimum
+ var_opt_DIS[[i]]<-alpha_results_DIS$objective
+
+ var_half_MLE_results<-var_MLE_est(.5,q1_dens,q2_dens,pi_dens,q_gamma,g_dens,0)
+ var_half_MLE[[i]]<-var_half_MLE_results-1
+  
+ alpha_results_MLE<-optimize(var_MLE_est,interval=c(delta_lowbound,1),q1_dens=q1_dens,q2_dens=q2_dens,pi_dens=pi_dens,q_gamma=q_gamma,g_dens=g_dens,beta_output=0)
+ alpha_opt_MLE[[i]]<-alpha_results_MLE$minimum
+ var_opt_MLE[[i]]<-alpha_results_MLE$objective-1
+
+  aa0<-as.matrix(data_all[[2]][1:n,])
+ 
+ # proposal Normal dens
+ q2_dens_0<-norm_dens_joint(aa0,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_0<-norm_dens_joint(aa0,mu_norm_pi,sigma_norm_pi)
+
+ var_0_DIS_results<-var_DIS_est(0,q1_dens,q2_dens_0,pi_dens_0,q_gamma,0)
+ var_0_DIS[[i]]<-var_0_DIS_results
+ 
+ }
+proc.time()-save.time
+
+c(0.5,var_half_DIS=mean(unlist(var_half_DIS)))
+c(mean(unlist(alpha_opt_DIS)),var_opt_DIS=mean(unlist(var_opt_DIS)))
+c(0.5,var_half_MLE=mean(unlist(var_half_MLE)))
+c(mean(unlist(alpha_opt_MLE)),var_opt_MLE=mean(unlist(var_opt_MLE)))
+c(0,var_0_DIS=mean(unlist(var_0_DIS)))
+}
+
+###########################################
+# two-stage performance A1
+# use var_est, 400 for 1st stage
+{###########################################
+n=4000; replic=1000; dimension<-10; n0<-400
+
+mu_norm_pi<-rep(0,10); sigma_norm_pi<-rep(1,10);
+mu_norm_q2<-rep(0,10); sigma_norm_q2<-rep(1.1,10); 
+mu_t_q1<-0; df_t_q1<-1
+
+# fix mixture proportions
+estimation_MLE<-function(alpha){
+ n1<-floor(n*alpha); n2<-floor(n*(1-alpha));
+ 
+ x1<-data_all[[1]][1:n1,]
+ x2<-data_all[[2]][1:n2,]
+ x<-rbind(x1,x2)
+ 
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+ 
+ q_alpha<-alpha*q1_dens+(1-alpha)*q2_dens
+ g_dens<-q1_dens-q2_dens
+
+ dens_all<-list(q1_dens,q2_dens)
+ zeta_optim_results<-optimize(l_fun_neg,interval=c(-1,1),dens_all=dens_all,prop=alpha)
+ zeta_optim<-zeta_optim_results$minimum
+ estimator_MLE<-mean(pi_dens/((alpha-zeta_optim)*q1_dens+(1-alpha+zeta_optim)*q2_dens))
+
+ return(estimator_MLE)
+}
+
+estimation_DIS<-function(alpha){
+ n1<-floor(n*alpha); n2<-floor(n*(1-alpha));
+ 
+ x1<-data_all[[1]][1:n1,]
+ x2<-data_all[[2]][1:n2,]
+ x<-rbind(x1,x2)
+ 
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+ 
+ q_alpha<-alpha*q1_dens+(1-alpha)*q2_dens
+ g_dens<-q1_dens-q2_dens
+
+ estimator_DIS<-mean(pi_dens/q_alpha)
+
+ return(estimator_DIS)
+}
+
+estimation_q2<-function(n){ 
+ x2<-data_all[[2]][1:n,]
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+ estimator_DIS<-mean(pi_dens/q2_dens)
+
+ return(estimator_DIS)
+}
+
+
+# two-stage mixture proportions 
+estimation_MLE_twostages<-function(n0,gamma_vec){
+ n01<-floor(n0*gamma_vec[1]); n02<-floor(n0*gamma_vec[2]);
+ 
+ x11<-as.matrix(data_all[[1]][1:n01,])
+ x12<-as.matrix(data_all[[2]][1:n02,])
+ x1<-rbind(x11,x12)
+ 
+ # proposal t dens
+ q1_dens_stage1<-t_dens_joint(x1,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage1<-norm_dens_joint(x1,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage1<-norm_dens_joint(x1,mu_norm_pi,sigma_norm_pi)
+
+ q_gamma_stage1<-gamma_vec[1]*q1_dens_stage1+gamma_vec[2]*q2_dens_stage1
+ g_dens_stage1<-q1_dens_stage1-q2_dens_stage1
+ 
+alpha_hat_MLE<-optimize(var_MLE_est,interval=c(delta_lowbound,1),q1_dens=q1_dens_stage1,q2_dens=q2_dens_stage1,pi_dens=pi_dens_stage1,q_gamma=q_gamma_stage1,g_dens=g_dens_stage1)$minimum
+
+ n11<-floor((n-n0)*alpha_hat_MLE); n12<-floor((n-n0)*(1-alpha_hat_MLE));
+ if(n11>1) x21<-as.matrix(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==1) x21<-t(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==0) x21<-NULL
+ if(n12>1) x22<-as.matrix(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==1) x22<-t(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==0) x22<-NULL
+ x2<-rbind(x21,x22)
+ 
+ # proposal t dens
+ q1_dens_stage2<-t_dens_joint(x2,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage2<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage2<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+ 
+ alpha_tilde<-n0/n*gamma_vec[1]+(n-n0)/n*alpha_hat_MLE
+ q1_dens<-c(q1_dens_stage1,q1_dens_stage2)
+ q2_dens<-c(q2_dens_stage1,q2_dens_stage2)
+ pi_dens<-c(pi_dens_stage1,pi_dens_stage2)
+ q_alpha<-alpha_tilde*q1_dens+(1-alpha_tilde)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ dens_all<-list(q1_dens,q2_dens)
+ zeta_optim_results<-optimize(l_fun_neg,interval=c(-1,1),dens_all=dens_all,prop=alpha_tilde)
+ zeta_optim<-zeta_optim_results$minimum
+ estimator_MLE<-mean(pi_dens/((alpha_tilde-zeta_optim)*q1_dens+(1-alpha_tilde+zeta_optim)*q2_dens))
+  
+ return(c(alpha_hat_MLE,estimator_MLE))
+}
+
+estimation_DIS_twostages<-function(n0,gamma_vec){
+ n01<-floor(n0*gamma_vec[1]); n02<-floor(n0*gamma_vec[2]);
+ 
+ x11<-as.matrix(data_all[[1]][1:n01,])
+ x12<-as.matrix(data_all[[2]][1:n02,])
+ x1<-rbind(x11,x12)
+ 
+ # proposal t dens
+ q1_dens_stage1<-t_dens_joint(x1,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage1<-norm_dens_joint(x1,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage1<-norm_dens_joint(x1,mu_norm_pi,sigma_norm_pi)
+
+ q_gamma_stage1<-gamma_vec[1]*q1_dens_stage1+gamma_vec[2]*q2_dens_stage1
+ g_dens_stage1<-q1_dens_stage1-q2_dens_stage1
+
+ alpha_hat_DIS<-optimize(var_DIS_est,interval=c(delta_lowbound,1),q1_dens=q1_dens_stage1,q2_dens=q2_dens_stage1,pi_dens=pi_dens_stage1,q_gamma=q_gamma_stage1,n1=n01,tol=1e-05)$minimum
+
+ n11<-floor((n-n0)*alpha_hat_DIS); n12<-floor((n-n0)*(1-alpha_hat_DIS));
+ if(n11>1) x21<-as.matrix(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==1) x21<-t(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==0) x21<-NULL
+ if(n12>1) x22<-as.matrix(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==1) x22<-t(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==0) x22<-NULL
+ x2<-rbind(x21,x22)
+ 
+ # proposal t dens
+ q1_dens_stage2<-t_dens_joint(x2,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage2<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage2<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+ 
+ alpha_tilde<-n0/n*gamma_vec[1]+(n-n0)/n*alpha_hat_DIS
+ q1_dens<-c(q1_dens_stage1,q1_dens_stage2)
+ q2_dens<-c(q2_dens_stage1,q2_dens_stage2)
+ pi_dens<-c(pi_dens_stage1,pi_dens_stage2)
+ q_alpha<-alpha_tilde*q1_dens+(1-alpha_tilde)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ estimator_DIS<-mean(pi_dens/q_alpha)
+  
+ return(c(alpha_hat_DIS,estimator_DIS))
+}
+
+est_DIS<-0
+est_MLE<-0
+est_q2<-0
+alpha_hat_DIS_twostages<-0
+est_DIS_twostages<-0
+alpha_hat_MLE_twostages<-0
+est_MLE_twostages<-0
+
+
+save.time<-proc.time()
+for(i in 1:replic){
+  set.seed(2001+i)
+  x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+  data_all<-list(x1,x2)
+
+  results_est_DIS<-estimation_DIS(0.5)
+  est_DIS[i]<-results_est_DIS
+}
+proc.time()-save.time
+
+save.time<-proc.time()
+for(i in 1:replic){
+  set.seed(2001+i)
+  x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+  data_all<-list(x1,x2)
+
+  results_est_DIS_twostages<-estimation_DIS_twostages(n0,c(0.5,0.5))
+  alpha_hat_DIS_twostages[i]<-results_est_DIS_twostages[1]
+  est_DIS_twostages[i]<-results_est_DIS_twostages[2]
+}
+proc.time()-save.time
+
+
+save.time<-proc.time()
+for(i in 1:replic){
+  set.seed(2001+i)
+  x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+  data_all<-list(x1,x2)
+
+  results_est_MLE<-estimation_MLE(0.5) 
+  est_MLE[i]<-results_est_MLE
+}
+proc.time()-save.time
+
+save.time<-proc.time()
+for(i in 1:replic){
+  set.seed(2001+i)
+  x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+  data_all<-list(x1,x2)
+
+  results_est_MLE_twostages<-estimation_MLE_twostages(n0,c(0.5,0.5))
+  alpha_hat_MLE_twostages[i]<-results_est_MLE_twostages[1]
+  est_MLE_twostages[i]<-results_est_MLE_twostages[2]
+}
+proc.time()-save.time
+
+
+for(i in 1:replic){
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+  data_all<-list(NULL,x2)
+
+  results_est_0<-estimation_q2(n)
+  est_q2[i]<-results_est_0
+}
+
+alpha_hat_MLE<-mean(alpha_hat_MLE_twostages)
+var_MLE_twostages<-var(est_MLE_twostages)*n
+mean_MLE_twostages<-mean(est_MLE_twostages)
+
+alpha_hat_DIS<-mean(alpha_hat_DIS_twostages)
+var_DIS_twostages<-var(est_DIS_twostages)*n
+mean_DIS_twostages<-mean(est_DIS_twostages)
+ 
+var_DIS<-var(est_DIS)*n 
+mean_DIS<-mean(est_DIS)
+
+var_q2<-var(est_q2)*n
+mean_q2<-mean(est_q2)
+
+var_MLE<-var(est_MLE)*n
+mean_MLE<-mean(est_MLE)
+
+results<-matrix(c(0.5,0.5,alpha_hat_DIS,alpha_hat_MLE,0,var_DIS,var_MLE,var_DIS_twostages,var_MLE_twostages,var_q2,mean_DIS,mean_MLE,mean_DIS_twostages,mean_MLE_twostages,mean_q2),5,3)
+colnames(results)<-c("alpha","n*var","mean")
+rownames(results)<-c("DIS","MLE","DIS_twostage","MLE_twostage","q2")
+results
+}
+
+########################################################
+# asymptotic performance A1 expectation
+{#######################################################
+mu_norm_pi<-rep(0,10); sigma_norm_pi<-rep(1,10);
+mu_norm_q2<-rep(0,10); sigma_norm_q2<-rep(1.1,10); 
+mu_t_q1<-0; df_t_q1<-1
+
+n=2000000; dimension<-10; replic<-10
+
+var_half_DIS_expec<-list(0)
+alpha_opt_DIS_expec<-list(0)
+var_opt_DIS_expec<-list(0)
+var_half_MLE_expec<-list(0)
+alpha_opt_MLE_expec<-list(0)
+var_opt_MLE_expec<-list(0)
+var_0_DIS_expec<-list(0)
+
+gamma_vec<-c(.5,.5)
+n1<-n*gamma_vec[1]
+n2<-n*gamma_vec[2]
+
+for(i in 1:replic){
+ x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)  
+ x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+ data_all<-list(0,0)
+ data_all[[1]]<-x1
+ data_all[[2]]<-x2
+
+ aa1<-as.matrix(data_all[[1]][1:n1,])
+ aa2<-as.matrix(data_all[[2]][1:n2,])
+ x<-rbind(aa1,aa2)
+ 
+  # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+
+ q_gamma<-gamma_vec[1]*q1_dens+gamma_vec[2]*q2_dens
+ g_dens<-q1_dens-q2_dens
+ h<-rowSums(x^2)/dimension
+ temp<-!((pi_dens==0)&(q_gamma==0))
+ mu_hat<-mean((h*pi_dens/q_gamma)[temp])/mean((pi_dens/q_gamma)[temp])
+ 
+ var_half_DIS_expec_results<-var_DIS_expec_est(.5,h,mu_hat,q1_dens,q2_dens,pi_dens,q_gamma,n1)
+ var_half_DIS_expec[[i]]<-var_half_DIS_expec_results
+
+ alpha_results_DIS_expec<-optimize(var_DIS_expec_est,interval=c(delta_lowbound,1),h=h,mu_hat=mu_hat,q1_dens=q1_dens,q2_dens=q2_dens,pi_dens=pi_dens,q_gamma=q_gamma,n1=n1)
+ alpha_opt_DIS_expec[[i]]<-alpha_results_DIS_expec$minimum
+ var_opt_DIS_expec[[i]]<-alpha_results_DIS_expec$objective
+
+ var_half_MLE_expec_results<-var_MLE_expec_est(.5,h,mu_hat,q1_dens,q2_dens,pi_dens,q_gamma,g_dens,0)
+ var_half_MLE_expec[[i]]<-var_half_MLE_expec_results
+  
+ alpha_results_MLE_expec<-optimize(var_MLE_expec_est,interval=c(delta_lowbound,1),h=h,mu_hat=mu_hat,q1_dens=q1_dens,q2_dens=q2_dens,pi_dens=pi_dens,q_gamma=q_gamma,g_dens=g_dens,beta_output=0)
+ alpha_opt_MLE_expec[[i]]<-alpha_results_MLE_expec$minimum
+ var_opt_MLE_expec[[i]]<-alpha_results_MLE_expec$objective
+
+ aa0<-as.matrix(data_all[[2]][1:n,])
+ h0<-rowSums(aa0^2)/dimension
+
+ # proposal Normal dens
+ q2_dens_0<-norm_dens_joint(aa0,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_0<-norm_dens_joint(aa0,mu_norm_pi,sigma_norm_pi)
+
+ mu_hat0<-mean(h0*pi_dens_0/q2_dens_0)/mean(pi_dens_0/q2_dens_0)
+
+ var_0_DIS_expec_results<-var_DIS_expec_est(0,h0,mu_hat0,q1_dens,q2_dens_0,pi_dens_0,q_gamma,0)
+ var_0_DIS_expec[[i]]<-var_0_DIS_expec_results
+}
+
+c(0.5,var_half_DIS_expec=mean(unlist(var_half_DIS_expec)))
+c(mean(unlist(alpha_opt_DIS_expec)),var_opt_DIS_expec=mean(unlist(var_opt_DIS_expec)))
+c(0.5,var_half_MLE_expec=mean(unlist(var_half_MLE_expec)))
+c(mean(unlist(alpha_opt_MLE_expec)),var_opt_MLE_expec=mean(unlist(var_opt_MLE_expec)))
+c(0,var_0_DIS_expec=mean(unlist(var_0_DIS_expec)))
+
+}
+
+###########################################################
+# two-stage performance A1 expectation
+# use var_est, 400 for 1st stage
+{##########################################################
+n=4000; replic=1000; dimension<-10; n0<-400
+
+mu_norm_pi<-rep(0,10); sigma_norm_pi<-rep(1,10);
+mu_norm_q2<-rep(0,10); sigma_norm_q2<-rep(1.1,10); 
+mu_t_q1<-0; df_t_q1<-1
+
+# fix mixture proportions
+estimation_MLE<-function(alpha){
+ n1<-floor(n*alpha); n2<-floor(n*(1-alpha));
+ 
+ x1<-data_all[[1]][1:n1,]
+ x2<-data_all[[2]][1:n2,]
+ x<-rbind(x1,x2)
+
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+ 
+ q_alpha<-alpha*q1_dens+(1-alpha)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ h<-rowSums(x^2)/dimension
+
+ dens_all<-list(q1_dens,q2_dens)
+ zeta_optim_results<-optimize(l_fun_neg,interval=c(-1,1),dens_all=dens_all,prop=alpha)
+ zeta_optim<-zeta_optim_results$minimum
+ q_alpha_zeta<-(alpha-zeta_optim)*q1_dens+(1-alpha+zeta_optim)*q2_dens
+ estimator_MLE<-mean(h*pi_dens/q_alpha_zeta)/mean(pi_dens/q_alpha_zeta) 
+
+ return(estimator_MLE)
+}
+
+estimation_DIS<-function(alpha){
+ n1<-floor(n*alpha); n2<-floor(n*(1-alpha));
+ 
+ x1<-data_all[[1]][1:n1,]
+ x2<-data_all[[2]][1:n2,]
+ x<-rbind(x1,x2)
+ 
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+
+ q_alpha<-alpha*q1_dens+(1-alpha)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ h<-rowSums(x^2)/dimension
+
+ estimator_DIS<-mean(h*pi_dens/q_alpha)/mean(pi_dens/q_alpha)
+
+ return(estimator_DIS)
+}
+
+estimation_q2<-function(n){ 
+ x2<-data_all[[2]][1:n,]
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+ 
+ h<-rowSums(x2^2)/dimension
+
+ estimator_DIS<-mean(h*pi_dens/q2_dens)/mean(pi_dens/q2_dens)
+
+ return(estimator_DIS)
+}
+
+# two-stage mixture proportions 
+estimation_MLE_twostages<-function(n0,gamma_vec){
+ n01<-floor(n0*gamma_vec[1]); n02<-floor(n0*gamma_vec[2]);
+ 
+ x11<-as.matrix(data_all[[1]][1:n01,])
+ x12<-as.matrix(data_all[[2]][1:n02,])
+ x1<-rbind(x11,x12)
+
+ # proposal t dens
+ q1_dens_stage1<-t_dens_joint(x1,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage1<-norm_dens_joint(x1,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage1<-norm_dens_joint(x1,mu_norm_pi,sigma_norm_pi)
+
+ q_gamma_stage1<-gamma_vec[1]*q1_dens_stage1+gamma_vec[2]*q2_dens_stage1
+ g_dens_stage1<-q1_dens_stage1-q2_dens_stage1
+
+ temp<-!((pi_dens_stage1==0)&(q_gamma_stage1==0))
+ h_stage1<-rowSums(x1^2)/dimension
+ mu_hat_stage1<-mean((h_stage1*pi_dens_stage1/q_gamma_stage1)[temp])/mean((pi_dens_stage1/q_gamma_stage1)[temp])
+  
+ alpha_hat_MLE<-optimize(var_MLE_expec_est,interval=c(delta_lowbound,1),h=h_stage1,mu_hat=mu_hat_stage1,q1_dens=q1_dens_stage1,q2_dens=q2_dens_stage1,pi_dens=pi_dens_stage1,q_gamma=q_gamma_stage1,g_dens=g_dens_stage1,beta_output=0)$minimum
+
+ n11<-floor((n-n0)*alpha_hat_MLE); n12<-floor((n-n0)*(1-alpha_hat_MLE));
+ if(n11>1) x21<-as.matrix(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==1) x21<-t(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==0) x21<-NULL
+ if(n12>1) x22<-as.matrix(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==1) x22<-t(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==0) x22<-NULL
+ x2<-rbind(x21,x22)
+
+ # proposal t dens
+ q1_dens_stage2<-t_dens_joint(x2,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage2<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage2<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+ h<-rowSums(rbind(x11,x12,x21,x22)^2)/dimension
+ 
+ alpha_tilde<-n0/n*gamma_vec[1]+(n-n0)/n*alpha_hat_MLE
+ q1_dens<-c(q1_dens_stage1,q1_dens_stage2)
+ q2_dens<-c(q2_dens_stage1,q2_dens_stage2)
+ pi_dens<-c(pi_dens_stage1,pi_dens_stage2)
+ q_alpha<-alpha_tilde*q1_dens+(1-alpha_tilde)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ dens_all<-list(q1_dens,q2_dens)
+ zeta_optim_results<-optimize(l_fun_neg,interval=c(-1,1),dens_all=dens_all,prop=alpha_tilde)
+ zeta_optim<-zeta_optim_results$minimum
+ q_alpha_zeta<-(alpha_tilde-zeta_optim)*q1_dens+(1-alpha_tilde+zeta_optim)*q2_dens
+ estimator_MLE<-mean(h*pi_dens/q_alpha_zeta)/mean(pi_dens/q_alpha_zeta)
+
+ return(c(alpha_hat_MLE,estimator_MLE))
+}
+
+estimation_DIS_twostages<-function(n0,gamma_vec){
+ n01<-floor(n0*gamma_vec[1]); n02<-floor(n0*gamma_vec[2]);
+ 
+ x11<-as.matrix(data_all[[1]][1:n01,])
+ x12<-as.matrix(data_all[[2]][1:n02,])
+ x1<-rbind(x11,x12)
+
+ # proposal t dens
+ q1_dens_stage1<-t_dens_joint(x1,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage1<-norm_dens_joint(x1,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage1<-norm_dens_joint(x1,mu_norm_pi,sigma_norm_pi)
+
+ q_gamma_stage1<-gamma_vec[1]*q1_dens_stage1+gamma_vec[2]*q2_dens_stage1
+ g_dens_stage1<-q1_dens_stage1-q2_dens_stage1
+
+ temp<-!((pi_dens_stage1==0)&(q_gamma_stage1==0))
+ h_stage1<-rowSums(x1^2)/dimension
+ mu_hat_stage1<-mean((h_stage1*pi_dens_stage1/q_gamma_stage1)[temp])/mean((pi_dens_stage1/q_gamma_stage1)[temp])
+  
+ alpha_hat_DIS<-optimize(var_DIS_expec_est,interval=c(delta_lowbound,1),h=h_stage1,mu_hat=mu_hat_stage1,q1_dens=q1_dens_stage1,q2_dens=q2_dens_stage1,pi_dens=pi_dens_stage1,q_gamma=q_gamma_stage1,n1=n01)$minimum
+
+ n11<-floor((n-n0)*alpha_hat_DIS); n12<-floor((n-n0)*(1-alpha_hat_DIS));
+ if(n11>1) x21<-as.matrix(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==1) x21<-t(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==0) x21<-NULL
+ if(n12>1) x22<-as.matrix(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==1) x22<-t(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==0) x22<-NULL
+ x2<-rbind(x21,x22)
+
+ # proposal t dens
+ q1_dens_stage2<-t_dens_joint(x2,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage2<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage2<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+ h<-rowSums(rbind(x11,x12,x21,x22)^2)/dimension
+ 
+ alpha_tilde<-n0/n*gamma_vec[1]+(n-n0)/n*alpha_hat_DIS
+ q1_dens<-c(q1_dens_stage1,q1_dens_stage2)
+ q2_dens<-c(q2_dens_stage1,q2_dens_stage2)
+ pi_dens<-c(pi_dens_stage1,pi_dens_stage2)
+ q_alpha<-alpha_tilde*q1_dens+(1-alpha_tilde)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ estimator_DIS<-mean(h*pi_dens/q_alpha)/mean(pi_dens/q_alpha)
+
+ return(c(alpha_hat_DIS,estimator_DIS))
+}
+
+est_DIS<-0
+est_MLE<-0
+est_q2<-0
+alpha_hat_DIS_twostages<-0
+est_DIS_twostages<-0
+alpha_hat_MLE_twostages<-0
+est_MLE_twostages<-0
+
+save.time<-proc.time()
+for(i in 1:replic){
+  x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+  data_all<-list(x1,x2)
+  
+  results_est_DIS<-estimation_DIS(0.5)
+  est_DIS[i]<-results_est_DIS
+  
+  results_est_DIS_twostages<-estimation_DIS_twostages(n0,c(0.5,0.5))
+  alpha_hat_DIS_twostages[i]<-results_est_DIS_twostages[1]
+  est_DIS_twostages[i]<-results_est_DIS_twostages[2]
+
+  results_est_MLE<-estimation_MLE(0.5) 
+  est_MLE[i]<-results_est_MLE
+
+  results_est_MLE_twostages<-estimation_MLE_twostages(n0,c(0.5,0.5))
+  alpha_hat_MLE_twostages[i]<-results_est_MLE_twostages[1]
+  est_MLE_twostages[i]<-results_est_MLE_twostages[2]
+}
+proc.time()-save.time
+
+for(i in 1:replic){
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+  data_all<-list(NULL,x2)
+
+  results_est_0<-estimation_q2(n)
+  est_q2[i]<-results_est_0
+}
+
+alpha_hat_MLE<-mean(alpha_hat_MLE_twostages)
+var_MLE_twostages<-var(est_MLE_twostages)*n
+mean_MLE_twostages<-mean(est_MLE_twostages)
+
+alpha_hat_DIS<-mean(alpha_hat_DIS_twostages)
+var_DIS_twostages<-var(est_DIS_twostages)*n
+mean_DIS_twostages<-mean(est_DIS_twostages)
+ 
+var_DIS<-var(est_DIS)*n 
+mean_DIS<-mean(est_DIS)
+
+var_q2<-var(est_q2)*n
+mean_q2<-mean(est_q2)
+
+var_MLE<-var(est_MLE)*n
+mean_MLE<-mean(est_MLE)
+
+results<-matrix(c(0.5,0.5,alpha_hat_DIS,alpha_hat_MLE,0,var_DIS,var_MLE,var_DIS_twostages,var_MLE_twostages,var_q2,mean_DIS,mean_MLE,mean_DIS_twostages,mean_MLE_twostages,mean_q2),5,3)
+colnames(results)<-c("alpha","n*var","mean")
+rownames(results)<-c("DIS","MLE","DIS_twostage","MLE_twostage","q2")
+results
+}
+
+##########################################
+# asymptotic performance A2
+{##########################################
+mu_norm_pi<-rep(0,10); sigma_norm_pi<-rep(1,10);
+mu_norm_q2<-rep(0,10); sigma_norm_q2<-rep(.4,10); 
+mu_t_q1<-0; df_t_q1<-1
+
+n=2000000; dimension<-10; replic<-10
+
+var_half_DIS<-list(0)
+alpha_opt_DIS<-list(0)
+var_opt_DIS<-list(0)
+var_half_MLE<-list(0)
+alpha_opt_MLE<-list(0)
+var_opt_MLE<-list(0)
+var_0_DIS<-list(0)
+
+gamma_vec<-c(0.5,0.5)
+ n1<-n*gamma_vec[1]
+ n2<-n*gamma_vec[2]
+
+save.time<-proc.time()
+for(i in 1:replic){
+ x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)  
+ x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+ data_all<-list(0,0)
+ data_all[[1]]<-x1
+ data_all[[2]]<-x2
+
+ aa1<-as.matrix(data_all[[1]][1:n1,])
+ aa2<-as.matrix(data_all[[2]][1:n2,])
+ 
+ # proposal t dens
+ q1_dens<-t_dens_joint(rbind(aa1,aa2),mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(rbind(aa1,aa2),mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens<-norm_dens_joint(rbind(aa1,aa2),mu_norm_pi,sigma_norm_pi)
+
+ q_gamma<-gamma_vec[1]*q1_dens+gamma_vec[2]*q2_dens
+ g_dens<-q2_dens-q1_dens
+ 
+
+ var_half_DIS_results<-var_DIS_est(.5,q1_dens,q2_dens,pi_dens,q_gamma,n1)
+ var_half_DIS[[i]]<-var_half_DIS_results
+ 
+ alpha_results_DIS<-optimize(var_DIS_est,interval=c(delta_lowbound,1),q1_dens=q1_dens,q2_dens=q2_dens,pi_dens=pi_dens,q_gamma=q_gamma,n1=n1)
+ alpha_opt_DIS[[i]]<-alpha_results_DIS$minimum
+ var_opt_DIS[[i]]<-alpha_results_DIS$objective
+
+ var_half_MLE_results<-var_MLE_est(.5,q1_dens,q2_dens,pi_dens,q_gamma,g_dens,0)
+ var_half_MLE[[i]]<-var_half_MLE_results-1
+  
+ alpha_results_MLE<-optimize(var_MLE_est,interval=c(delta_lowbound,1),q1_dens=q1_dens,q2_dens=q2_dens,pi_dens=pi_dens,q_gamma=q_gamma,g_dens=g_dens,beta_output=0)
+ alpha_opt_MLE[[i]]<-alpha_results_MLE$minimum
+ var_opt_MLE[[i]]<-alpha_results_MLE$objective-1
+
+  aa0<-as.matrix(data_all[[2]][1:n,])
+ 
+ # proposal Normal dens
+ q2_dens_0<-norm_dens_joint(aa0,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_0<-norm_dens_joint(aa0,mu_norm_pi,sigma_norm_pi)
+
+ var_0_DIS_results<-var_DIS_est(0,q1_dens,q2_dens_0,pi_dens_0,q_gamma,0)
+ var_0_DIS[[i]]<-var_0_DIS_results
+}
+proc.time()-save.time
+
+c(0.5,var_half_DIS=mean(unlist(var_half_DIS)))
+c(mean(unlist(alpha_opt_DIS)),var_opt_DIS=mean(unlist(var_opt_DIS)))
+c(0.5,var_half_MLE=mean(unlist(var_half_MLE)))
+c(mean(unlist(alpha_opt_MLE)),var_opt_MLE=mean(unlist(var_opt_MLE)))
+c(0,var_0_DIS=mean(unlist(var_0_DIS)))
+}
+
+###########################################
+# two-stage performance A2
+# use var_est, 400 for 1st stage
+{###########################################
+n=4000; replic=1000; dimension<-10; n0<-400
+
+mu_norm_pi<-rep(0,10); sigma_norm_pi<-rep(1,10);
+mu_norm_q2<-rep(0,10); sigma_norm_q2<-rep(.4,10); 
+mu_t_q1<-0; df_t_q1<-1
+
+# fix mixture proportions
+estimation_MLE<-function(alpha){
+ n1<-floor(n*alpha); n2<-floor(n*(1-alpha));
+ 
+ x1<-data_all[[1]][1:n1,]
+ x2<-data_all[[2]][1:n2,]
+ x<-rbind(x1,x2)
+ 
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+ 
+ q_alpha<-alpha*q1_dens+(1-alpha)*q2_dens
+ g_dens<-q1_dens-q2_dens
+
+ dens_all<-list(q1_dens,q2_dens)
+ zeta_optim_results<-optimize(l_fun_neg,interval=c(-1,1),dens_all=dens_all,prop=alpha)
+ zeta_optim<-zeta_optim_results$minimum
+ estimator_MLE<-mean(pi_dens/((alpha-zeta_optim)*q1_dens+(1-alpha+zeta_optim)*q2_dens))
+
+ return(estimator_MLE)
+}
+
+estimation_DIS<-function(alpha){
+ n1<-floor(n*alpha); n2<-floor(n*(1-alpha));
+ 
+ x1<-data_all[[1]][1:n1,]
+ x2<-data_all[[2]][1:n2,]
+ x<-rbind(x1,x2)
+ 
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+ 
+ q_alpha<-alpha*q1_dens+(1-alpha)*q2_dens
+ g_dens<-q1_dens-q2_dens
+
+ estimator_DIS<-mean(pi_dens/q_alpha)
+
+ return(estimator_DIS)
+}
+
+estimation_q2<-function(n){ 
+ x2<-data_all[[2]][1:n,]
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+ estimator_DIS<-mean(pi_dens/q2_dens)
+
+ return(estimator_DIS)
+}
+
+# two-stage mixture proportions 
+estimation_MLE_twostages<-function(n0,gamma_vec){
+ n01<-floor(n0*gamma_vec[1]); n02<-floor(n0*gamma_vec[2]);
+ 
+ x11<-as.matrix(data_all[[1]][1:n01,])
+ x12<-as.matrix(data_all[[2]][1:n02,])
+ x1<-rbind(x11,x12)
+ 
+ # proposal t dens
+ q1_dens_stage1<-t_dens_joint(x1,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage1<-norm_dens_joint(x1,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage1<-norm_dens_joint(x1,mu_norm_pi,sigma_norm_pi)
+
+ q_gamma_stage1<-gamma_vec[1]*q1_dens_stage1+gamma_vec[2]*q2_dens_stage1
+ g_dens_stage1<-q1_dens_stage1-q2_dens_stage1
+
+ alpha_hat_MLE<-optimize(var_MLE_est,interval=c(delta_lowbound,1),q1_dens=q1_dens_stage1,q2_dens=q2_dens_stage1,pi_dens=pi_dens_stage1,q_gamma=q_gamma_stage1,g_dens=g_dens_stage1,beta_output=0)$minimum
+
+ n11<-floor((n-n0)*alpha_hat_MLE); n12<-floor((n-n0)*(1-alpha_hat_MLE));
+ if(n11>1) x21<-as.matrix(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==1) x21<-t(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==0) x21<-NULL
+ if(n12>1) x22<-as.matrix(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==1) x22<-t(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==0) x22<-NULL
+ x2<-rbind(x21,x22)
+ 
+ # proposal t dens
+ q1_dens_stage2<-t_dens_joint(x2,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage2<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage2<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+ 
+ alpha_tilde<-n0/n*gamma_vec[1]+(n-n0)/n*alpha_hat_MLE
+ q1_dens<-c(q1_dens_stage1,q1_dens_stage2)
+ q2_dens<-c(q2_dens_stage1,q2_dens_stage2)
+ pi_dens<-c(pi_dens_stage1,pi_dens_stage2)
+ q_alpha<-alpha_tilde*q1_dens+(1-alpha_tilde)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ dens_all<-list(q1_dens,q2_dens)
+ zeta_optim_results<-optimize(l_fun_neg,interval=c(-1,1),dens_all=dens_all,prop=alpha_tilde)
+ zeta_optim<-zeta_optim_results$minimum
+ estimator_MLE<-mean(pi_dens/((alpha_tilde-zeta_optim)*q1_dens+(1-alpha_tilde+zeta_optim)*q2_dens))
+  
+  browser()
+ return(c(alpha_hat_MLE,estimator_MLE))
+}
+
+estimation_DIS_twostages<-function(n0,gamma_vec){
+ n01<-floor(n0*gamma_vec[1]); n02<-floor(n0*gamma_vec[2]);
+ 
+ x11<-as.matrix(data_all[[1]][1:n01,])
+ x12<-as.matrix(data_all[[2]][1:n02,])
+ x1<-rbind(x11,x12)
+ 
+ # proposal t dens
+ q1_dens_stage1<-t_dens_joint(x1,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage1<-norm_dens_joint(x1,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage1<-norm_dens_joint(x1,mu_norm_pi,sigma_norm_pi)
+
+ q_gamma_stage1<-gamma_vec[1]*q1_dens_stage1+gamma_vec[2]*q2_dens_stage1
+ g_dens_stage1<-q1_dens_stage1-q2_dens_stage1
+
+ alpha_hat_DIS<-optimize(var_DIS_est,interval=c(delta_lowbound,1),q1_dens=q1_dens_stage1,q2_dens=q2_dens_stage1,pi_dens=pi_dens_stage1,q_gamma=q_gamma_stage1,n1=n01)$minimum
+
+ n11<-floor((n-n0)*alpha_hat_DIS); n12<-floor((n-n0)*(1-alpha_hat_DIS));
+ if(n11>1) x21<-as.matrix(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==1) x21<-t(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==0) x21<-NULL
+ if(n12>1) x22<-as.matrix(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==1) x22<-t(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==0) x22<-NULL
+ x2<-rbind(x21,x22)
+ 
+ # proposal t dens
+ q1_dens_stage2<-t_dens_joint(x2,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage2<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage2<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+ 
+ alpha_tilde<-n0/n*gamma_vec[1]+(n-n0)/n*alpha_hat_DIS
+ q1_dens<-c(q1_dens_stage1,q1_dens_stage2)
+ q2_dens<-c(q2_dens_stage1,q2_dens_stage2)
+ pi_dens<-c(pi_dens_stage1,pi_dens_stage2)
+ q_alpha<-alpha_tilde*q1_dens+(1-alpha_tilde)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ estimator_DIS<-mean(pi_dens/q_alpha)
+  
+ return(c(alpha_hat_DIS,estimator_DIS))
+}
+
+est_DIS<-0
+est_MLE<-0
+est_q2<-0
+alpha_hat_DIS_twostages<-0
+est_DIS_twostages<-0
+alpha_hat_MLE_twostages<-0
+est_MLE_twostages<-0
+
+save.time<-proc.time()
+for(i in 1:replic){
+  x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+  data_all<-list(x1,x2)
+  
+  results_est_DIS<-estimation_DIS(0.5)
+  est_DIS[i]<-results_est_DIS
+  
+  results_est_DIS_twostages<-estimation_DIS_twostages(n0,c(0.5,0.5))
+  alpha_hat_DIS_twostages[i]<-results_est_DIS_twostages[1]
+  est_DIS_twostages[i]<-results_est_DIS_twostages[2]
+
+  results_est_MLE<-estimation_MLE(0.5) 
+  est_MLE[i]<-results_est_MLE
+
+  results_est_MLE_twostages<-estimation_MLE_twostages(n0,c(0.5,0.5))
+  alpha_hat_MLE_twostages[i]<-results_est_MLE_twostages[1]
+  est_MLE_twostages[i]<-results_est_MLE_twostages[2]
+}
+proc.time()-save.time
+
+for(i in 1:replic){
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+  data_all<-list(NULL,x2)
+
+  results_est_0<-estimation_q2(n)
+  est_q2[i]<-results_est_0
+}
+
+alpha_hat_MLE<-mean(alpha_hat_MLE_twostages)
+var_MLE_twostages<-var(est_MLE_twostages)*n
+mean_MLE_twostages<-mean(est_MLE_twostages)
+
+alpha_hat_DIS<-mean(alpha_hat_DIS_twostages)
+var_DIS_twostages<-var(est_DIS_twostages)*n
+mean_DIS_twostages<-mean(est_DIS_twostages)
+ 
+var_DIS<-var(est_DIS)*n 
+mean_DIS<-mean(est_DIS)
+
+var_q2<-var(est_q2)*n
+mean_q2<-mean(est_q2)
+
+var_MLE<-var(est_MLE)*n
+mean_MLE<-mean(est_MLE)
+
+results<-matrix(c(0.5,0.5,alpha_hat_DIS,alpha_hat_MLE,0,var_DIS,var_MLE,var_DIS_twostages,var_MLE_twostages,var_q2,mean_DIS,mean_MLE,mean_DIS_twostages,mean_MLE_twostages,mean_q2),5,3)
+colnames(results)<-c("alpha","n*var","mean")
+rownames(results)<-c("DIS","MLE","DIS_twostage","MLE_twostage","q2")
+results
+}
+
+########################################################
+# asymptotic performance A2 expectation
+{#######################################################
+mu_norm_pi<-rep(0,10); sigma_norm_pi<-rep(1,10);
+mu_norm_q2<-rep(0,10); sigma_norm_q2<-rep(.4,10); 
+mu_t_q1<-0; df_t_q1<-1
+
+n=2000000; dimension<-10; replic<-10
+
+var_half_DIS_expec<-list(0)
+alpha_opt_DIS_expec<-list(0)
+var_opt_DIS_expec<-list(0)
+var_half_MLE_expec<-list(0)
+alpha_opt_MLE_expec<-list(0)
+var_opt_MLE_expec<-list(0)
+var_0_DIS_expec<-list(0)
+
+gamma_vec<-c(.5,.5)
+n1<-n*gamma_vec[1]
+n2<-n*gamma_vec[2]
+
+
+
+for(i in 1:replic){
+ x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)  
+ x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+ data_all<-list(0,0)
+ data_all[[1]]<-x1
+ data_all[[2]]<-x2
+
+ aa0<-as.matrix(data_all[[2]][1:n,])
+ h0<-rowSums(aa0^2)/dimension
+ 
+ # proposal Normal dens
+ q2_dens_0<-norm_dens_joint(aa0,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_0<-norm_dens_joint(aa0,mu_norm_pi,sigma_norm_pi)
+
+ mu_hat0<-mean(h0*pi_dens_0/q2_dens_0)/mean(pi_dens_0/q2_dens_0)
+
+ var_0_DIS_expec_results<-var_DIS_expec_est(0,h0,mu_hat0,q1_dens,q2_dens_0,pi_dens_0,q_gamma,0)
+ var_0_DIS_expec[[i]]<-var_0_DIS_expec_results
+}
+
+for(i in 1:replic){
+ x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)  
+ x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+ data_all<-list(0,0)
+ data_all[[1]]<-x1
+ data_all[[2]]<-x2
+
+ aa1<-as.matrix(data_all[[1]][1:n1,])
+ aa2<-as.matrix(data_all[[2]][1:n2,])
+ x<-rbind(aa1,aa2)
+ 
+  # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+
+ q_gamma<-gamma_vec[1]*q1_dens+gamma_vec[2]*q2_dens
+ g_dens<-q1_dens-q2_dens
+ h<-rowSums(x^2)/dimension
+ temp<-!((pi_dens==0)&(q_gamma==0))
+ mu_hat<-mean((h*pi_dens/q_gamma)[temp])/mean((pi_dens/q_gamma)[temp])
+ 
+ var_half_DIS_expec_results<-var_DIS_expec_est(.5,h,mu_hat,q1_dens,q2_dens,pi_dens,q_gamma,n1)
+ var_half_DIS_expec[[i]]<-var_half_DIS_expec_results
+ 
+ alpha_results_DIS_expec<-optimize(var_DIS_expec_est,interval=c(delta_lowbound,1),h=h,mu_hat=mu_hat,q1_dens=q1_dens,q2_dens=q2_dens,pi_dens=pi_dens,q_gamma=q_gamma,n1=n1)
+ alpha_opt_DIS_expec[[i]]<-alpha_results_DIS_expec$minimum
+ var_opt_DIS_expec[[i]]<-alpha_results_DIS_expec$objective
+
+ var_half_MLE_expec_results<-var_MLE_expec_est(.5,h,mu_hat,q1_dens,q2_dens,pi_dens,q_gamma,g_dens,0)
+ var_half_MLE_expec[[i]]<-var_half_MLE_expec_results
+  
+ alpha_results_MLE_expec<-optimize(var_MLE_expec_est,interval=c(delta_lowbound,1),h=h,mu_hat=mu_hat,q1_dens=q1_dens,q2_dens=q2_dens,pi_dens=pi_dens,q_gamma=q_gamma,g_dens=g_dens,beta_output=0)
+ alpha_opt_MLE_expec[[i]]<-alpha_results_MLE_expec$minimum
+ var_opt_MLE_expec[[i]]<-alpha_results_MLE_expec$objective
+
+ aa0<-as.matrix(data_all[[2]][1:n,])
+ h0<-rowSums(aa0^2)/dimension
+ 
+ # proposal Normal dens
+ q2_dens_0<-norm_dens_joint(aa0,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_0<-norm_dens_joint(aa0,mu_norm_pi,sigma_norm_pi)
+
+ mu_hat0<-mean(h0*pi_dens_0/q2_dens_0)/mean(pi_dens_0/q2_dens_0)
+
+ var_0_DIS_expec_results<-var_DIS_expec_est(0,h0,mu_hat0,q1_dens,q2_dens_0,pi_dens_0,q_gamma,0)
+ var_0_DIS_expec[[i]]<-var_0_DIS_expec_results
+}
+
+c(0.5,var_half_DIS_expec=n*mean(unlist(var_half_DIS_expec)))
+c(mean(unlist(alpha_opt_DIS_expec)),var_opt_DIS_expec=n*mean(unlist(var_opt_DIS_expec)))
+c(0.5,var_half_MLE_expec=n*mean(unlist(var_half_MLE_expec)))
+c(mean(unlist(alpha_opt_MLE_expec)),var_opt_MLE_expec=n*mean(unlist(var_opt_MLE_expec)))
+c(0,var_0_DIS_expec=mean(unlist(var_0_DIS_expec)))
+
+}
+
+###########################################################
+# two-stage performance A2 expectation
+# use var_est, 400 for 1st stage
+{##########################################################
+n=4000; replic=1000; dimension<-10; n0<-400
+
+mu_norm_pi<-rep(0,10); sigma_norm_pi<-rep(1,10);
+mu_norm_q2<-rep(0,10); sigma_norm_q2<-rep(.4,10); 
+mu_t_q1<-0; df_t_q1<-1
+
+# fix mixture proportions
+estimation_MLE<-function(alpha){
+ n1<-floor(n*alpha); n2<-floor(n*(1-alpha));
+ 
+ x1<-data_all[[1]][1:n1,]
+ x2<-data_all[[2]][1:n2,]
+ x<-rbind(x1,x2)
+
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+ 
+ q_alpha<-alpha*q1_dens+(1-alpha)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ h<-rowSums(x^2)/dimension
+
+ dens_all<-list(q1_dens,q2_dens)
+ zeta_optim_results<-optimize(l_fun_neg,interval=c(-1,1),dens_all=dens_all,prop=alpha)
+ zeta_optim<-zeta_optim_results$minimum
+ q_alpha_zeta<-(alpha-zeta_optim)*q1_dens+(1-alpha+zeta_optim)*q2_dens
+ estimator_MLE<-mean(h*pi_dens/q_alpha_zeta)/mean(pi_dens/q_alpha_zeta) 
+
+ return(estimator_MLE)
+}
+
+estimation_DIS<-function(alpha){
+ n1<-floor(n*alpha); n2<-floor(n*(1-alpha));
+ 
+ x1<-data_all[[1]][1:n1,]
+ x2<-data_all[[2]][1:n2,]
+ x<-rbind(x1,x2)
+ 
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+
+ q_alpha<-alpha*q1_dens+(1-alpha)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ h<-rowSums(x^2)/dimension
+
+ estimator_DIS<-mean(h*pi_dens/q_alpha)/mean(pi_dens/q_alpha)
+
+ return(estimator_DIS)
+}
+
+estimation_q2<-function(n){ 
+ x2<-data_all[[2]][1:n,]
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+ 
+ h<-rowSums(x2^2)/dimension
+
+ estimator_DIS<-mean(h*pi_dens/q2_dens)/mean(pi_dens/q2_dens)
+
+ return(estimator_DIS)
+}
+
+# two-stage mixture proportions 
+estimation_MLE_twostages<-function(n0,gamma_vec){
+ n01<-floor(n0*gamma_vec[1]); n02<-floor(n0*gamma_vec[2]);
+ 
+ x11<-as.matrix(data_all[[1]][1:n01,])
+ x12<-as.matrix(data_all[[2]][1:n02,])
+ x1<-rbind(x11,x12)
+
+ # proposal t dens
+ q1_dens_stage1<-t_dens_joint(x1,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage1<-norm_dens_joint(x1,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage1<-norm_dens_joint(x1,mu_norm_pi,sigma_norm_pi)
+
+ q_gamma_stage1<-gamma_vec[1]*q1_dens_stage1+gamma_vec[2]*q2_dens_stage1
+ g_dens_stage1<-q1_dens_stage1-q2_dens_stage1
+
+ temp<-!((pi_dens_stage1==0)&(q_gamma_stage1==0))
+ h_stage1<-rowSums(x1^2)/dimension
+ mu_hat_stage1<-mean((h_stage1*pi_dens_stage1/q_gamma_stage1)[temp])/mean((pi_dens_stage1/q_gamma_stage1)[temp])
+  
+ alpha_hat_MLE<-optimize(var_MLE_expec_est,interval=c(delta_lowbound,1),h=h_stage1,mu_hat=mu_hat_stage1,q1_dens=q1_dens_stage1,q2_dens=q2_dens_stage1,pi_dens=pi_dens_stage1,q_gamma=q_gamma_stage1,g_dens=g_dens_stage1,beta_output=0)$minimum
+
+ n11<-floor((n-n0)*alpha_hat_MLE); n12<-floor((n-n0)*(1-alpha_hat_MLE));
+ if(n11>1) x21<-as.matrix(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==1) x21<-t(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==0) x21<-NULL
+ if(n12>1) x22<-as.matrix(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==1) x22<-t(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==0) x22<-NULL
+ x2<-rbind(x21,x22)
+
+ # proposal t dens
+ q1_dens_stage2<-t_dens_joint(x2,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage2<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage2<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+ h<-rowSums(rbind(x11,x12,x21,x22)^2)/dimension
+ 
+ alpha_tilde<-n0/n*gamma_vec[1]+(n-n0)/n*alpha_hat_MLE
+ q1_dens<-c(q1_dens_stage1,q1_dens_stage2)
+ q2_dens<-c(q2_dens_stage1,q2_dens_stage2)
+ pi_dens<-c(pi_dens_stage1,pi_dens_stage2)
+ q_alpha<-alpha_tilde*q1_dens+(1-alpha_tilde)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ dens_all<-list(q1_dens,q2_dens)
+ zeta_optim_results<-optimize(l_fun_neg,interval=c(-1,1),dens_all=dens_all,prop=alpha_tilde)
+ zeta_optim<-zeta_optim_results$minimum
+ q_alpha_zeta<-(alpha_tilde-zeta_optim)*q1_dens+(1-alpha_tilde+zeta_optim)*q2_dens
+ estimator_MLE<-mean(h*pi_dens/q_alpha_zeta)/mean(pi_dens/q_alpha_zeta)
+
+ return(c(alpha_hat_MLE,estimator_MLE))
+}
+
+estimation_DIS_twostages<-function(n0,gamma_vec){
+ n01<-floor(n0*gamma_vec[1]); n02<-floor(n0*gamma_vec[2]);
+ 
+ x11<-as.matrix(data_all[[1]][1:n01,])
+ x12<-as.matrix(data_all[[2]][1:n02,])
+ x1<-rbind(x11,x12)
+
+ # proposal t dens
+ q1_dens_stage1<-t_dens_joint(x1,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage1<-norm_dens_joint(x1,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage1<-norm_dens_joint(x1,mu_norm_pi,sigma_norm_pi)
+
+ q_gamma_stage1<-gamma_vec[1]*q1_dens_stage1+gamma_vec[2]*q2_dens_stage1
+ g_dens_stage1<-q1_dens_stage1-q2_dens_stage1
+
+ temp<-!((pi_dens_stage1==0)&(q_gamma_stage1==0))
+ h_stage1<-rowSums(x1^2)/dimension
+ mu_hat_stage1<-mean((h_stage1*pi_dens_stage1/q_gamma_stage1)[temp])/mean((pi_dens_stage1/q_gamma_stage1)[temp])
+  
+ alpha_hat_DIS<-optimize(var_DIS_expec_est,interval=c(delta_lowbound,1),h=h_stage1,mu_hat=mu_hat_stage1,q1_dens=q1_dens_stage1,q2_dens=q2_dens_stage1,pi_dens=pi_dens_stage1,q_gamma=q_gamma_stage1,n1=n01)$minimum
+
+ n11<-floor((n-n0)*alpha_hat_DIS); n12<-floor((n-n0)*(1-alpha_hat_DIS));
+ if(n11>1) x21<-as.matrix(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==1) x21<-t(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==0) x21<-NULL
+ if(n12>1) x22<-as.matrix(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==1) x22<-t(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==0) x22<-NULL
+ x2<-rbind(x21,x22)
+
+ # proposal t dens
+ q1_dens_stage2<-t_dens_joint(x2,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage2<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage2<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+ h<-rowSums(rbind(x11,x12,x21,x22)^2)/dimension
+ 
+ alpha_tilde<-n0/n*gamma_vec[1]+(n-n0)/n*alpha_hat_DIS
+ q1_dens<-c(q1_dens_stage1,q1_dens_stage2)
+ q2_dens<-c(q2_dens_stage1,q2_dens_stage2)
+ pi_dens<-c(pi_dens_stage1,pi_dens_stage2)
+ q_alpha<-alpha_tilde*q1_dens+(1-alpha_tilde)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ estimator_DIS<-mean(h*pi_dens/q_alpha)/mean(pi_dens/q_alpha)
+
+ return(c(alpha_hat_DIS,estimator_DIS))
+}
+
+est_DIS<-0
+est_MLE<-0
+est_q2<-0
+alpha_hat_DIS_twostages<-0
+est_DIS_twostages<-0
+alpha_hat_MLE_twostages<-0
+est_MLE_twostages<-0
+
+save.time<-proc.time()
+for(i in 1:replic){
+  x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+  data_all<-list(x1,x2)
+  
+  results_est_DIS<-estimation_DIS(0.5)
+  est_DIS[i]<-results_est_DIS
+  
+  results_est_DIS_twostages<-estimation_DIS_twostages(n0,c(0.5,0.5))
+  alpha_hat_DIS_twostages[i]<-results_est_DIS_twostages[1]
+  est_DIS_twostages[i]<-results_est_DIS_twostages[2]
+
+  results_est_MLE<-estimation_MLE(0.5) 
+  est_MLE[i]<-results_est_MLE
+
+  results_est_MLE_twostages<-estimation_MLE_twostages(n0,c(0.5,0.5))
+  alpha_hat_MLE_twostages[i]<-results_est_MLE_twostages[1]
+  est_MLE_twostages[i]<-results_est_MLE_twostages[2]
+}
+proc.time()-save.time
+
+for(i in 1:replic){
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+  data_all<-list(NULL,x2)
+
+  results_est_0<-estimation_q2(n)
+  est_q2[i]<-results_est_0
+}
+
+alpha_hat_MLE<-mean(alpha_hat_MLE_twostages)
+var_MLE_twostages<-var(est_MLE_twostages)*n
+mean_MLE_twostages<-mean(est_MLE_twostages)
+
+alpha_hat_DIS<-mean(alpha_hat_DIS_twostages)
+var_DIS_twostages<-var(est_DIS_twostages)*n
+mean_DIS_twostages<-mean(est_DIS_twostages)
+ 
+var_DIS<-var(est_DIS)*n 
+mean_DIS<-mean(est_DIS)
+
+var_MLE<-var(est_MLE)*n
+mean_MLE<-mean(est_MLE)
+
+var_q2<-var(est_q2)*n
+mean_q2<-mean(est_q2)
+
+results<-matrix(c(0.5,0.5,alpha_hat_DIS,alpha_hat_MLE,0,var_DIS,var_MLE,var_DIS_twostages,var_MLE_twostages,var_q2,mean_DIS,mean_MLE,mean_DIS_twostages,mean_MLE_twostages,mean_q2),5,3)
+colnames(results)<-c("alpha","n*var","mean")
+rownames(results)<-c("DIS","MLE","DIS_twostage","MLE_twostage","q2")
+results
+}
+
+####################################
+# asymptotic performance B1
+{###################################
+mu_norm_pi<-rep(0,10); sigma_norm_pi<-rep(1,10); #sigma_norm_pi<-rep(0.8,10);
+mu_norm_q2<-rep(0,10); sigma_norm_q2<-rep(1,10); 
+mu_t_pi<-0; df_t_pi<-4; 
+mu_t_q1<-0; df_t_q1<-1
+
+n=2000000; dimension<-10; replic<-10; alpha_pi<-.8
+
+var_half_DIS<-list(0)
+alpha_opt_DIS<-list(0)
+var_opt_DIS<-list(0)
+var_half_MLE<-list(0)
+alpha_opt_MLE<-list(0)
+var_opt_MLE<-list(0)
+var_0_DIS<-list(0)
+
+gamma_vec<-c(.5,.5)
+n1<-n*gamma_vec[1]
+n2<-n*gamma_vec[2]
+
+
+save.time<-proc.time()
+for(i in 1:replic){
+ x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)  
+ x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+ data_all<-list(0,0)
+ data_all[[1]]<-x1
+ data_all[[2]]<-x2
+
+ aa1<-as.matrix(data_all[[1]][1:n1,])
+ aa2<-as.matrix(data_all[[2]][1:n2,])
+ x<-rbind(aa1,aa2)
+ 
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_part1<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_part2<-t_dens_joint(x,mu_t_pi,df_t_pi)
+ 
+ pi_dens<-alpha_pi*pi_dens_part1+(1-alpha_pi)*pi_dens_part2
+ q_gamma<-gamma_vec[1]*q1_dens+gamma_vec[2]*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ var_half_DIS_results<-var_DIS_est(.5,q1_dens,q2_dens,pi_dens,q_gamma,n1)
+ var_half_DIS[[i]]<-var_half_DIS_results
+ 
+ alpha_results_DIS<-optimize(var_DIS_est,interval=c(delta_lowbound,1),q1_dens=q1_dens,q2_dens=q2_dens,pi_dens=pi_dens,q_gamma=q_gamma,n1=n1)
+ alpha_opt_DIS[[i]]<-alpha_results_DIS$minimum
+ var_opt_DIS[[i]]<-alpha_results_DIS$objective
+
+ var_half_MLE_results<-var_MLE_est(.5,q1_dens,q2_dens,pi_dens,q_gamma,g_dens,0)
+ var_half_MLE[[i]]<-var_half_MLE_results-1
+  
+ alpha_results_MLE<-optimize(var_MLE_est,interval=c(delta_lowbound,1),q1_dens=q1_dens,q2_dens=q2_dens,pi_dens=pi_dens,q_gamma=q_gamma,g_dens=g_dens,beta_output=0)
+ alpha_opt_MLE[[i]]<-alpha_results_MLE$minimum
+ var_opt_MLE[[i]]<-alpha_results_MLE$objective-1
+
+  aa0<-as.matrix(data_all[[2]][1:n,])
+ 
+ # proposal Normal dens
+ q2_dens_0<-norm_dens_joint(aa0,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_0_part1<-norm_dens_joint(aa0,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_0_part2<-t_dens_joint(aa0,mu_t_pi,df_t_pi)
+ 
+ pi_dens_0<-alpha_pi*pi_dens_0_part1+(1-alpha_pi)*pi_dens_0_part2
+
+ var_0_DIS_results<-var_DIS_est(0,q1_dens,q2_dens_0,pi_dens_0,q_gamma,0)
+ var_0_DIS[[i]]<-var_0_DIS_results
+}
+proc.time()-save.time
+
+c(0.5,var_half_DIS=mean(unlist(var_half_DIS)))
+c(mean(unlist(alpha_opt_DIS)),var_opt_DIS=mean(unlist(var_opt_DIS)))
+c(0.5,var_half_MLE=mean(unlist(var_half_MLE)))
+c(mean(unlist(alpha_opt_MLE)),var_opt_MLE=mean(unlist(var_opt_MLE)))
+c(0,var_0_DIS=mean(unlist(var_0_DIS)))
+}
+
+############################################
+# two-stage performance B1
+# use var_est, 400 for 1st stage
+{###########################################
+n=4000; replic=1000; dimension<-10; n0<-400
+
+mu_norm_pi<-rep(0,10); sigma_norm_pi<-rep(1,10);
+mu_norm_q2<-rep(0,10); sigma_norm_q2<-rep(1,10); 
+mu_t_pi<-0; df_t_pi<-4; 
+mu_t_q1<-0; df_t_q1<-1
+
+
+# fix mixture proportions
+estimation_MLE<-function(alpha){
+ n1<-floor(n*alpha); n2<-floor(n*(1-alpha));
+ 
+ x1<-data_all[[1]][1:n1,]
+ x2<-data_all[[2]][1:n2,]
+ x<-rbind(x1,x2)
+ 
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_part1<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_part2<-t_dens_joint(x,mu_t_pi,df_t_pi)
+ 
+ pi_dens<-0.8*pi_dens_part1+0.2*pi_dens_part2
+ 
+ q_alpha<-alpha*q1_dens+(1-alpha)*q2_dens
+ g_dens<-q1_dens-q2_dens
+
+ dens_all<-list(q1_dens,q2_dens)
+ zeta_optim_results<-optimize(l_fun_neg,interval=c(-1,1),dens_all=dens_all,prop=alpha)
+ zeta_optim<-zeta_optim_results$minimum
+ estimator_MLE<-mean(pi_dens/((alpha-zeta_optim)*q1_dens+(1-alpha+zeta_optim)*q2_dens))
+
+ return(estimator_MLE)
+}
+
+estimation_DIS<-function(alpha){
+ n1<-floor(n*alpha); n2<-floor(n*(1-alpha));
+ 
+ x1<-data_all[[1]][1:n1,]
+ x2<-data_all[[2]][1:n2,]
+ x<-rbind(x1,x2)
+ 
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_part1<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_part2<-t_dens_joint(x,mu_t_pi,df_t_pi)
+ 
+ pi_dens<-0.8*pi_dens_part1+0.2*pi_dens_part2
+ 
+ q_alpha<-alpha*q1_dens+(1-alpha)*q2_dens
+ g_dens<-q1_dens-q2_dens
+
+ estimator_DIS<-mean(pi_dens/q_alpha)
+
+ return(estimator_DIS)
+}
+
+estimation_q2<-function(n){ 
+ x2<-data_all[[2]][1:n,]
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_part1<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_part2<-t_dens_joint(x2,mu_t_pi,df_t_pi)
+ 
+ pi_dens<-0.8*pi_dens_part1+0.2*pi_dens_part2
+
+ estimator_DIS<-mean(pi_dens/q2_dens)
+
+ return(estimator_DIS)
+}
+
+# two-stage mixture proportions 
+estimation_MLE_twostages<-function(n0,gamma_vec){
+ n01<-floor(n0*gamma_vec[1]); n02<-floor(n0*gamma_vec[2]);
+ 
+ x11<-as.matrix(data_all[[1]][1:n01,])
+ x12<-as.matrix(data_all[[2]][1:n02,])
+ x1<-rbind(x11,x12)
+ 
+ # proposal t dens
+ q1_dens_stage1<-t_dens_joint(x1,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage1<-norm_dens_joint(x1,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage1_part1<-norm_dens_joint(x1,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_stage1_part2<-t_dens_joint(x1,mu_t_pi,df_t_pi)
+ 
+ pi_dens_stage1<-0.8*pi_dens_stage1_part1+0.2*pi_dens_stage1_part2
+ q_gamma_stage1<-gamma_vec[1]*q1_dens_stage1+gamma_vec[2]*q2_dens_stage1
+ g_dens_stage1<-q1_dens_stage1-q2_dens_stage1
+
+ alpha_hat_MLE<-optimize(var_MLE_est,interval=c(delta_lowbound,1),q1_dens=q1_dens_stage1,q2_dens=q2_dens_stage1,pi_dens=pi_dens_stage1,q_gamma=q_gamma_stage1,g_dens=g_dens_stage1,beta_output=0)$minimum
+
+ n11<-floor((n-n0)*alpha_hat_MLE); n12<-floor((n-n0)*(1-alpha_hat_MLE));
+ if(n11>1) x21<-as.matrix(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==1) x21<-t(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==0) x21<-NULL
+ if(n12>1) x22<-as.matrix(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==1) x22<-t(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==0) x22<-NULL
+ x2<-rbind(x21,x22)
+ 
+ # proposal t dens
+ q1_dens_stage2<-t_dens_joint(x2,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage2<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage2_part1<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_stage2_part2<-t_dens_joint(x2,mu_t_pi,df_t_pi)
+ 
+ pi_dens_stage2<-0.8*pi_dens_stage2_part1+0.2*pi_dens_stage2_part2
+ 
+ alpha_tilde<-n0/n*gamma_vec[1]+(n-n0)/n*alpha_hat_MLE
+ q1_dens<-c(q1_dens_stage1,q1_dens_stage2)
+ q2_dens<-c(q2_dens_stage1,q2_dens_stage2)
+ pi_dens<-c(pi_dens_stage1,pi_dens_stage2)
+ q_alpha<-alpha_tilde*q1_dens+(1-alpha_tilde)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ dens_all<-list(q1_dens,q2_dens)
+ zeta_optim_results<-optimize(l_fun_neg,interval=c(-1,1),dens_all=dens_all,prop=alpha_tilde)
+ zeta_optim<-zeta_optim_results$minimum
+ estimator_MLE<-mean(pi_dens/((alpha_tilde-zeta_optim)*q1_dens+(1-alpha_tilde+zeta_optim)*q2_dens))
+
+ return(c(alpha_hat_MLE,estimator_MLE))
+}
+
+estimation_DIS_twostages<-function(n0,gamma_vec){
+ n01<-floor(n0*gamma_vec[1]); n02<-floor(n0*gamma_vec[2]);
+ 
+ x11<-as.matrix(data_all[[1]][1:n01,])
+ x12<-as.matrix(data_all[[2]][1:n02,])
+ x1<-rbind(x11,x12)
+ 
+ # proposal t dens
+ q1_dens_stage1<-t_dens_joint(x1,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage1<-norm_dens_joint(x1,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage1_part1<-norm_dens_joint(x1,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_stage1_part2<-t_dens_joint(x1,mu_t_pi,df_t_pi)
+ 
+ pi_dens_stage1<-0.8*pi_dens_stage1_part1+0.2*pi_dens_stage1_part2
+ q_gamma_stage1<-gamma_vec[1]*q1_dens_stage1+gamma_vec[2]*q2_dens_stage1
+ g_dens_stage1<-q1_dens_stage1-q2_dens_stage1
+
+ alpha_hat_DIS<-optimize(var_DIS_est,interval=c(0,1),q1_dens=q1_dens_stage1,q2_dens=q2_dens_stage1,pi_dens=pi_dens_stage1,q_gamma=q_gamma_stage1,n1=n01)$minimum
+
+ n11<-floor((n-n0)*alpha_hat_DIS); n12<-floor((n-n0)*(1-alpha_hat_DIS));
+ if(n11>1) x21<-as.matrix(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==1) x21<-t(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==0) x21<-NULL
+ if(n12>1) x22<-as.matrix(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==1) x22<-t(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==0) x22<-NULL
+ x2<-rbind(x21,x22)
+ 
+ # proposal t dens
+ q1_dens_stage2<-t_dens_joint(x2,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage2<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage2_part1<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_stage2_part2<-t_dens_joint(x2,mu_t_pi,df_t_pi)
+ 
+ pi_dens_stage2<-0.8*pi_dens_stage2_part1+0.2*pi_dens_stage2_part2
+ 
+ alpha_tilde<-n0/n*gamma_vec[1]+(n-n0)/n*alpha_hat_DIS
+ q1_dens<-c(q1_dens_stage1,q1_dens_stage2)
+ q2_dens<-c(q2_dens_stage1,q2_dens_stage2)
+ pi_dens<-c(pi_dens_stage1,pi_dens_stage2)
+ q_alpha<-alpha_tilde*q1_dens+(1-alpha_tilde)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ estimator_DIS<-mean(pi_dens/q_alpha)
+  
+ return(c(alpha_hat_DIS,estimator_DIS))
+}
+
+
+est_DIS<-0
+est_MLE<-0
+est_q2<-0
+alpha_hat_DIS_twostages<-0
+est_DIS_twostages<-0
+alpha_hat_MLE_twostages<-0
+est_MLE_twostages<-0
+
+save.time<-proc.time()
+for(i in 1:replic){
+  x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+  data_all<-list(x1,x2)
+  
+  results_est_DIS<-estimation_DIS(0.5)
+  est_DIS[i]<-results_est_DIS
+  
+  results_est_DIS_twostages<-estimation_DIS_twostages(n0,c(0.5,0.5))
+  alpha_hat_DIS_twostages[i]<-results_est_DIS_twostages[1]
+  est_DIS_twostages[i]<-results_est_DIS_twostages[2]
+
+  results_est_MLE<-estimation_MLE(0.5) 
+  est_MLE[i]<-results_est_MLE
+
+  results_est_MLE_twostages<-estimation_MLE_twostages(n0,c(0.5,0.5))
+  alpha_hat_MLE_twostages[i]<-results_est_MLE_twostages[1]
+  est_MLE_twostages[i]<-results_est_MLE_twostages[2]
+}
+proc.time()-save.time
+
+for(i in 1:replic){
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+
+  results_est_0<-estimation_q2(n)
+  est_q2[i]<-results_est_0
+}
+
+alpha_hat_MLE<-mean(alpha_hat_MLE_twostages)
+var_MLE_twostages<-var(est_MLE_twostages)*n
+mean_MLE_twostages<-mean(est_MLE_twostages)
+
+alpha_hat_DIS<-mean(alpha_hat_DIS_twostages)
+var_DIS_twostages<-var(est_DIS_twostages)*n
+mean_DIS_twostages<-mean(est_DIS_twostages)
+ 
+var_DIS<-var(est_DIS)*n 
+mean_DIS<-mean(est_DIS)
+
+var_MLE<-var(est_MLE)*n
+mean_MLE<-mean(est_MLE)
+
+results<-matrix(c(0.5,0.5,alpha_hat_DIS,alpha_hat_MLE,var_DIS,var_MLE,var_DIS_twostages,var_MLE_twostages,mean_DIS,mean_MLE,mean_DIS_twostages,mean_MLE_twostages),4,3)
+colnames(results)<-c("alpha","n*var","mean")
+rownames(results)<-c("DIS","MLE","DIS_twostage","MLE_twostage")
+results
+
+}
+
+#####################################################
+# asymptotic performance B1 expectation
+{####################################################
+mu_norm_pi<-rep(0,10); sigma_norm_pi<-rep(1,10);
+mu_norm_q2<-rep(0,10); sigma_norm_q2<-rep(1,10); 
+mu_t_pi<-0; df_t_pi<-4; 
+mu_t_q1<-0; df_t_q1<-1
+
+n=2000000; dimension<-10; replic<-10; alpha_pi<-.8
+
+var_half_DIS_expec<-list(0)
+alpha_opt_DIS_expec<-list(0)
+var_opt_DIS_expec<-list(0)
+var_half_MLE_expec<-list(0)
+alpha_opt_MLE_expec<-list(0)
+var_opt_MLE_expec<-list(0)
+var_0_DIS_expec<-list(0)
+
+gamma_vec<-c(.5,.5)
+n1<-n*gamma_vec[1]
+n2<-n*gamma_vec[2]
+
+for(i in 1:replic){
+ x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)  
+ x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+ data_all<-list(0,0)
+ data_all[[1]]<-x1
+ data_all[[2]]<-x2
+
+ aa1<-as.matrix(data_all[[1]][1:n1,])
+ aa2<-as.matrix(data_all[[2]][1:n2,])
+ x<-rbind(aa1,aa2)
+
+  # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_part1<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_part2<-t_dens_joint(x,mu_t_pi,df_t_pi)
+
+ pi_dens<-0.8*pi_dens_part1+0.2*pi_dens_part2
+ q_gamma<-gamma_vec[1]*q1_dens+gamma_vec[2]*q2_dens
+ g_dens<-q1_dens-q2_dens
+ h<-rowSums(x^2)/dimension
+ temp<-!((pi_dens==0)&(q_gamma==0))
+ mu_hat<-mean((h*pi_dens/q_gamma)[temp])/mean((pi_dens/q_gamma)[temp])
+
+ var_half_DIS_expec_results<-var_DIS_expec_est(.5,h,mu_hat,q1_dens,q2_dens,pi_dens,q_gamma,n1)
+ var_half_DIS_expec[[i]]<-var_half_DIS_expec_results
+ 
+ alpha_results_DIS_expec<-optimize(var_DIS_expec_est,interval=c(delta_lowbound,1),h=h,mu_hat=mu_hat,q1_dens=q1_dens,q2_dens=q2_dens,pi_dens=pi_dens,q_gamma=q_gamma,n1=n1)
+ alpha_opt_DIS_expec[[i]]<-alpha_results_DIS_expec$minimum
+ var_opt_DIS_expec[[i]]<-alpha_results_DIS_expec$objective
+
+ var_half_MLE_expec_results<-var_MLE_expec_est(.5,h,mu_hat,q1_dens,q2_dens,pi_dens,q_gamma,g_dens,0)
+ var_half_MLE_expec[[i]]<-var_half_MLE_expec_results
+  
+ alpha_results_MLE_expec<-optimize(var_MLE_expec_est,interval=c(delta_lowbound,1),h=h,mu_hat=mu_hat,q1_dens=q1_dens,q2_dens=q2_dens,pi_dens=pi_dens,q_gamma=q_gamma,g_dens=g_dens,beta_output=0)
+ alpha_opt_MLE_expec[[i]]<-alpha_results_MLE_expec$minimum
+ var_opt_MLE_expec[[i]]<-alpha_results_MLE_expec$objective
+
+ aa0<-as.matrix(data_all[[2]][1:n,])
+ h0<-rowSums(aa0^2)/dimension
+
+ # proposal Normal dens
+ q2_dens_0<-norm_dens_joint(aa0,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_0_part1<-norm_dens_joint(aa0,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_0_part2<-t_dens_joint(aa0,mu_t_pi,df_t_pi)
+ 
+ pi_dens_0<-alpha_pi*pi_dens_0_part1+(1-alpha_pi)*pi_dens_0_part2
+
+ mu_hat0<-mean(h0*pi_dens_0/q2_dens_0)/mean(pi_dens_0/q2_dens_0)
+
+ var_0_DIS_expec_results<-var_DIS_expec_est(0,h0,mu_hat0,q1_dens,q2_dens_0,pi_dens_0,q_gamma,0)
+ var_0_DIS_expec[[i]]<-var_0_DIS_expec_results
+}
+
+c(0.5,var_half_DIS_expec=mean(unlist(var_half_DIS_expec)))
+c(mean(unlist(alpha_opt_DIS_expec)),var_opt_DIS_expec=mean(unlist(var_opt_DIS_expec)))
+c(0.5,var_half_MLE_expec=mean(unlist(var_half_MLE_expec)))
+c(mean(unlist(alpha_opt_MLE_expec)),var_opt_MLE_expec=mean(unlist(var_opt_MLE_expec)))
+c(0,var_0_DIS_expec=mean(unlist(var_0_DIS_expec)))
+
+}
+
+##############################################################
+# two-stage performance B1 expectation
+# use var_est, 400 for 1st stage
+{#############################################################
+n=4000; replic=1000; dimension<-10; n0<-400
+
+mu_norm_pi<-rep(0,10); sigma_norm_pi<-rep(1,10);
+mu_norm_q2<-rep(0,10); sigma_norm_q2<-rep(1,10); 
+mu_t_pi<-0; df_t_pi<-4; 
+mu_t_q1<-0; df_t_q1<-1
+
+
+# fix mixture proportions
+estimation_MLE<-function(alpha){
+ n1<-floor(n*alpha); n2<-floor(n*(1-alpha));
+ 
+ x1<-data_all[[1]][1:n1,]
+ x2<-data_all[[2]][1:n2,]
+ x<-rbind(x1,x2)
+
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_part1<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_part2<-t_dens_joint(x,mu_t_pi,df_t_pi)
+ 
+ pi_dens<-0.8*pi_dens_part1+0.2*pi_dens_part2
+ 
+ q_alpha<-alpha*q1_dens+(1-alpha)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ h<-rowSums(x^2)/dimension
+
+ dens_all<-list(q1_dens,q2_dens)
+ zeta_optim_results<-optimize(l_fun_neg,interval=c(-1,1),dens_all=dens_all,prop=alpha)
+ zeta_optim<-zeta_optim_results$minimum
+ q_alpha_zeta<-(alpha-zeta_optim)*q1_dens+(1-alpha+zeta_optim)*q2_dens
+ estimator_MLE<-mean(h*pi_dens/q_alpha_zeta)/mean(pi_dens/q_alpha_zeta) 
+
+ return(estimator_MLE)
+}
+
+estimation_DIS<-function(alpha){
+ n1<-floor(n*alpha); n2<-floor(n*(1-alpha));
+ 
+ x1<-data_all[[1]][1:n1,]
+ x2<-data_all[[2]][1:n2,]
+ x<-rbind(x1,x2)
+ 
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_part1<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_part2<-t_dens_joint(x,mu_t_pi,df_t_pi)
+ 
+ pi_dens<-0.8*pi_dens_part1+0.2*pi_dens_part2
+ 
+ q_alpha<-alpha*q1_dens+(1-alpha)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ h<-rowSums(x^2)/dimension
+
+ estimator_DIS<-mean(h*pi_dens/q_alpha)/mean(pi_dens/q_alpha)
+
+ return(estimator_DIS)
+}
+
+estimation_q2<-function(n){ 
+ x2<-data_all[[2]][1:n,]
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_part1<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_part2<-t_dens_joint(x2,mu_t_pi,df_t_pi)
+ 
+ pi_dens<-0.8*pi_dens_part1+0.2*pi_dens_part2
+ h<-rowSums(x2^2)/dimension
+
+ estimator_DIS<-mean(h*pi_dens/q2_dens)/mean(pi_dens/q2_dens)
+
+ return(estimator_DIS)
+}
+
+
+# two-stage mixture proportions 
+estimation_MLE_twostages<-function(n0,gamma_vec){
+ n01<-floor(n0*gamma_vec[1]); n02<-floor(n0*gamma_vec[2]);
+ 
+ x11<-as.matrix(data_all[[1]][1:n01,])
+ x12<-as.matrix(data_all[[2]][1:n02,])
+ x1<-rbind(x11,x12)
+
+ # proposal t dens
+ q1_dens_stage1<-t_dens_joint(x1,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage1<-norm_dens_joint(x1,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage1_part1<-norm_dens_joint(x1,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_stage1_part2<-t_dens_joint(x1,mu_t_pi,df_t_pi)
+ 
+ pi_dens_stage1<-0.8*pi_dens_stage1_part1+0.2*pi_dens_stage1_part2
+ q_gamma_stage1<-gamma_vec[1]*q1_dens_stage1+gamma_vec[2]*q2_dens_stage1
+ g_dens_stage1<-q1_dens_stage1-q2_dens_stage1
+
+ temp<-!((pi_dens_stage1==0)&(q_gamma_stage1==0))
+ h_stage1<-rowSums(x1^2)/dimension
+ mu_hat_stage1<-mean((h_stage1*pi_dens_stage1/q_gamma_stage1)[temp])/mean((pi_dens_stage1/q_gamma_stage1)[temp])
+ alpha_hat_MLE<-optimize(var_MLE_expec_est,interval=c(delta_lowbound,1),h=h_stage1,mu_hat=mu_hat_stage1,q1_dens=q1_dens_stage1,q2_dens=q2_dens_stage1,pi_dens=pi_dens_stage1,q_gamma=q_gamma_stage1,g_dens=g_dens_stage1,beta_output=0)$minimum
+  
+ n11<-floor((n-n0)*alpha_hat_MLE); n12<-floor((n-n0)*(1-alpha_hat_MLE));
+ if(n11>1) x21<-as.matrix(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==1) x21<-t(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==0) x21<-NULL
+ if(n12>1) x22<-as.matrix(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==1) x22<-t(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==0) x22<-NULL
+ x2<-rbind(x21,x22)
+
+ # proposal t dens
+ q1_dens_stage2<-t_dens_joint(x2,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage2<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage2_part1<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_stage2_part2<-t_dens_joint(x2,mu_t_pi,df_t_pi)
+
+ pi_dens_stage2<-0.8*pi_dens_stage2_part1+0.2*pi_dens_stage2_part2
+
+ h<-rowSums(rbind(x11,x12,x21,x22)^2)/dimension
+ 
+ alpha_tilde<-n0/n*gamma_vec[1]+(n-n0)/n*alpha_hat_MLE
+ q1_dens<-c(q1_dens_stage1,q1_dens_stage2)
+ q2_dens<-c(q2_dens_stage1,q2_dens_stage2)
+ pi_dens<-c(pi_dens_stage1,pi_dens_stage2)
+ q_alpha<-alpha_tilde*q1_dens+(1-alpha_tilde)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ dens_all<-list(q1_dens,q2_dens)
+ zeta_optim_results<-optimize(l_fun_neg,interval=c(-1,1),dens_all=dens_all,prop=alpha_tilde)
+ zeta_optim<-zeta_optim_results$minimum
+ q_alpha_zeta<-(alpha_tilde-zeta_optim)*q1_dens+(1-alpha_tilde+zeta_optim)*q2_dens
+ estimator_MLE<-mean(h*pi_dens/q_alpha_zeta)/mean(pi_dens/q_alpha_zeta)
+
+ return(c(alpha_hat_MLE,estimator_MLE))
+}
+
+estimation_DIS_twostages<-function(n0,gamma_vec){
+ n01<-floor(n0*gamma_vec[1]); n02<-floor(n0*gamma_vec[2]);
+ 
+ x11<-as.matrix(data_all[[1]][1:n01,])
+ x12<-as.matrix(data_all[[2]][1:n02,])
+ x1<-rbind(x11,x12)
+
+ # proposal t dens
+ q1_dens_stage1<-t_dens_joint(x1,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage1<-norm_dens_joint(x1,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage1_part1<-norm_dens_joint(x1,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_stage1_part2<-t_dens_joint(x1,mu_t_pi,df_t_pi)
+ 
+ pi_dens_stage1<-0.8*pi_dens_stage1_part1+0.2*pi_dens_stage1_part2
+ q_gamma_stage1<-gamma_vec[1]*q1_dens_stage1+gamma_vec[2]*q2_dens_stage1
+ g_dens_stage1<-q1_dens_stage1-q2_dens_stage1
+
+ temp<-!((pi_dens_stage1==0)&(q_gamma_stage1==0))
+ h_stage1<-rowSums(x1^2)/dimension
+ mu_hat_stage1<-mean((h_stage1*pi_dens_stage1/q_gamma_stage1)[temp])/mean((pi_dens_stage1/q_gamma_stage1)[temp])
+  
+ alpha_hat_DIS<-optimize(var_DIS_expec_est,interval=c(delta_lowbound,1),h=h_stage1,mu_hat=mu_hat_stage1,q1_dens=q1_dens_stage1,q2_dens=q2_dens_stage1,pi_dens=pi_dens_stage1,q_gamma=q_gamma_stage1,n1=n01)$minimum
+
+ n11<-floor((n-n0)*alpha_hat_DIS); n12<-floor((n-n0)*(1-alpha_hat_DIS));
+ if(n11>1) x21<-as.matrix(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==1) x21<-t(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==0) x21<-NULL
+ if(n12>1) x22<-as.matrix(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==1) x22<-t(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==0) x22<-NULL
+ x2<-rbind(x21,x22)
+
+ # proposal t dens
+ q1_dens_stage2<-t_dens_joint(x2,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage2<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage2_part1<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_stage2_part2<-t_dens_joint(x2,mu_t_pi,df_t_pi)
+
+ pi_dens_stage2<-0.8*pi_dens_stage2_part1+0.2*pi_dens_stage2_part2
+
+ h<-rowSums(rbind(x11,x12,x21,x22)^2)/dimension
+ 
+ alpha_tilde<-n0/n*gamma_vec[1]+(n-n0)/n*alpha_hat_DIS
+ q1_dens<-c(q1_dens_stage1,q1_dens_stage2)
+ q2_dens<-c(q2_dens_stage1,q2_dens_stage2)
+ pi_dens<-c(pi_dens_stage1,pi_dens_stage2)
+ q_alpha<-alpha_tilde*q1_dens+(1-alpha_tilde)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ estimator_DIS<-mean(h*pi_dens/q_alpha)/mean(pi_dens/q_alpha)
+
+ return(c(alpha_hat_DIS,estimator_DIS))
+}
+
+est_DIS<-0
+est_MLE<-0
+est_q2<-0
+alpha_hat_DIS_twostages<-0
+est_DIS_twostages<-0
+alpha_hat_MLE_twostages<-0
+est_MLE_twostages<-0
+
+save.time<-proc.time()
+for(i in 1:replic){
+  x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+  data_all<-list(x1,x2)
+  
+  results_est_DIS<-estimation_DIS(0.5)
+  est_DIS[i]<-results_est_DIS
+  
+  results_est_DIS_twostages<-estimation_DIS_twostages(n0,c(0.5,0.5))
+  alpha_hat_DIS_twostages[i]<-results_est_DIS_twostages[1]
+  est_DIS_twostages[i]<-results_est_DIS_twostages[2]
+
+  results_est_MLE<-estimation_MLE(0.5) 
+  est_MLE[i]<-results_est_MLE
+
+  results_est_MLE_twostages<-estimation_MLE_twostages(n0,c(0.5,0.5))
+  alpha_hat_MLE_twostages[i]<-results_est_MLE_twostages[1]
+  est_MLE_twostages[i]<-results_est_MLE_twostages[2]
+}
+proc.time()-save.time
+
+for(i in 1:replic){
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+  data_all<-list(NULL,x2)
+
+  results_est_0<-estimation_q2(n)
+  est_q2[i]<-results_est_0
+}
+
+alpha_hat_MLE<-mean(alpha_hat_MLE_twostages)
+var_MLE_twostages<-var(est_MLE_twostages)*n
+mean_MLE_twostages<-mean(est_MLE_twostages)
+
+alpha_hat_DIS<-mean(alpha_hat_DIS_twostages)
+var_DIS_twostages<-var(est_DIS_twostages)*n
+mean_DIS_twostages<-mean(est_DIS_twostages)
+ 
+var_DIS<-var(est_DIS)*n 
+mean_DIS<-mean(est_DIS)
+
+var_MLE<-var(est_MLE)*n
+mean_MLE<-mean(est_MLE)
+
+var_q2<-var(est_q2)*n
+mean_q2<-mean(est_q2)
+
+results<-matrix(c(0,0.5,0.5,alpha_hat_DIS,alpha_hat_MLE,var_q2,var_DIS,var_MLE,var_DIS_twostages,var_MLE_twostages,mean_q2,mean_DIS,mean_MLE,mean_DIS_twostages,mean_MLE_twostages),ncol=3)
+colnames(results)<-c("alpha","n*var","mean")
+rownames(results)<-c("q2","DIS","MLE","DIS_twostage","MLE_twostage")
+results
+
+}
+
+####################################
+# asymptotic performance B2 
+{###################################
+mu_norm_pi<-rep(0,10); sigma_norm_pi<-rep(1,10); #sigma_norm_pi<-rep(0.8,10);
+mu_norm_q2<-rep(0,10); sigma_norm_q2<-rep(1,10); 
+mu_t_pi<-0; df_t_pi<-4; 
+mu_t_q1<-0; df_t_q1<-2
+
+n=2000000; dimension<-10; replic<-10; alpha_pi<-.8
+
+var_half_DIS<-list(0)
+alpha_opt_DIS<-list(0)
+var_opt_DIS<-list(0)
+var_half_MLE<-list(0)
+alpha_opt_MLE<-list(0)
+var_opt_MLE<-list(0)
+var_0_DIS<-list(0)
+
+gamma_vec<-c(.5,.5)
+n1<-n*gamma_vec[1]
+n2<-n*gamma_vec[2]
+
+ save.time<-proc.time()
+ proc.time()-save.time
+
+for(i in 1:replic){
+ x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)  
+ x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+ data_all<-list(0,0)
+ data_all[[1]]<-x1
+ data_all[[2]]<-x2
+
+ aa1<-as.matrix(data_all[[1]][1:n1,])
+ aa2<-as.matrix(data_all[[2]][1:n2,])
+ x<-rbind(aa1,aa2)
+ 
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_part1<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_part2<-t_dens_joint(x,mu_t_pi,df_t_pi)
+ 
+ pi_dens<-0.8*pi_dens_part1+0.2*pi_dens_part2
+ q_gamma<-gamma_vec[1]*q1_dens+gamma_vec[2]*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ var_half_DIS_results<-var_DIS_est(.5,q1_dens,q2_dens,pi_dens,q_gamma,n1)
+ var_half_DIS[[i]]<-var_half_DIS_results
+ 
+ alpha_results_DIS<-optimize(var_DIS_est,interval=c(delta_lowbound,1),q1_dens=q1_dens,q2_dens=q2_dens,pi_dens=pi_dens,q_gamma=q_gamma,n1=n1)
+ alpha_opt_DIS[[i]]<-alpha_results_DIS$minimum
+ var_opt_DIS[[i]]<-alpha_results_DIS$objective
+
+ var_half_MLE_results<-var_MLE_est(.5,q1_dens,q2_dens,pi_dens,q_gamma,g_dens,0)
+ var_half_MLE[[i]]<-var_half_MLE_results-1
+  
+ alpha_results_MLE<-optimize(var_MLE_est,interval=c(delta_lowbound,1),q1_dens=q1_dens,q2_dens=q2_dens,pi_dens=pi_dens,q_gamma=q_gamma,g_dens=g_dens,beta_output=0)
+ alpha_opt_MLE[[i]]<-alpha_results_MLE$minimum
+ var_opt_MLE[[i]]<-alpha_results_MLE$objective-1
+
+  aa0<-as.matrix(data_all[[2]][1:n,])
+ 
+ # proposal Normal dens
+ q2_dens_0<-norm_dens_joint(aa0,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_0_part1<-norm_dens_joint(aa0,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_0_part2<-t_dens_joint(aa0,mu_t_pi,df_t_pi)
+ 
+ pi_dens_0<-alpha_pi*pi_dens_0_part1+(1-alpha_pi)*pi_dens_0_part2
+
+ var_0_DIS_results<-var_DIS_est(0,q1_dens,q2_dens_0,pi_dens_0,q_gamma,0)
+ var_0_DIS[[i]]<-var_0_DIS_results
+}
+
+c(0.5,var_half_DIS=mean(unlist(var_half_DIS)))
+c(mean(unlist(alpha_opt_DIS)),var_opt_DIS=mean(unlist(var_opt_DIS)))
+c(0.5,var_half_MLE=mean(unlist(var_half_MLE)))
+c(mean(unlist(alpha_opt_MLE)),var_opt_MLE=mean(unlist(var_opt_MLE)))
+c(0,var_0_DIS=mean(unlist(var_0_DIS)))
+
+}
+
+############################################
+# two-stage performance B2
+# use var_est_1, 4000 for 1st stage
+{###########################################
+n=4000; replic=1000; dimension<-10; n0<-400
+
+mu_norm_pi<-rep(0,10); sigma_norm_pi<-rep(1,10);
+mu_norm_q2<-rep(0,10); sigma_norm_q2<-rep(1,10); 
+mu_t_pi<-0; df_t_pi<-4; 
+mu_t_q1<-0; df_t_q1<-2
+
+
+# fix mixture proportions
+estimation_MLE<-function(alpha){
+ n1<-floor(n*alpha); n2<-floor(n*(1-alpha));
+ 
+ x1<-data_all[[1]][1:n1,]
+ x2<-data_all[[2]][1:n2,]
+ x<-rbind(x1,x2)
+ 
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_part1<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_part2<-t_dens_joint(x,mu_t_pi,df_t_pi)
+ 
+ pi_dens<-0.8*pi_dens_part1+0.2*pi_dens_part2
+ 
+ q_alpha<-alpha*q1_dens+(1-alpha)*q2_dens
+ g_dens<-q1_dens-q2_dens
+
+ dens_all<-list(q1_dens,q2_dens)
+ zeta_optim_results<-optimize(l_fun_neg,interval=c(-1,1),dens_all=dens_all,prop=alpha)
+ zeta_optim<-zeta_optim_results$minimum
+ estimator_MLE<-mean(pi_dens/((alpha-zeta_optim)*q1_dens+(1-alpha+zeta_optim)*q2_dens))
+
+ return(estimator_MLE)
+}
+
+estimation_DIS<-function(alpha){
+ n1<-floor(n*alpha); n2<-floor(n*(1-alpha));
+ 
+ x1<-data_all[[1]][1:n1,]
+ x2<-data_all[[2]][1:n2,]
+ x<-rbind(x1,x2)
+ 
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_part1<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_part2<-t_dens_joint(x,mu_t_pi,df_t_pi)
+ 
+ pi_dens<-0.8*pi_dens_part1+0.2*pi_dens_part2
+ 
+ q_alpha<-alpha*q1_dens+(1-alpha)*q2_dens
+ g_dens<-q1_dens-q2_dens
+
+ estimator_DIS<-mean(pi_dens/q_alpha)
+
+ return(estimator_DIS)
+}
+
+estimation_q2<-function(n){ 
+ x2<-data_all[[2]][1:n,]
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_part1<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_part2<-t_dens_joint(x2,mu_t_pi,df_t_pi)
+ 
+ pi_dens<-0.8*pi_dens_part1+0.2*pi_dens_part2
+
+ estimator_DIS<-mean(pi_dens/q2_dens)
+
+ return(estimator_DIS)
+}
+
+# two-stage mixture proportions 
+estimation_MLE_twostages<-function(n0,gamma_vec){
+ n01<-floor(n0*gamma_vec[1]); n02<-floor(n0*gamma_vec[2]);
+ 
+ x11<-as.matrix(data_all[[1]][1:n01,])
+ x12<-as.matrix(data_all[[2]][1:n02,])
+ x1<-rbind(x11,x12)
+ 
+ # proposal t dens
+ q1_dens_stage1<-t_dens_joint(x1,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage1<-norm_dens_joint(x1,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage1_part1<-norm_dens_joint(x1,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_stage1_part2<-t_dens_joint(x1,mu_t_pi,df_t_pi)
+ 
+ pi_dens_stage1<-0.8*pi_dens_stage1_part1+0.2*pi_dens_stage1_part2
+ q_gamma_stage1<-gamma_vec[1]*q1_dens_stage1+gamma_vec[2]*q2_dens_stage1
+ g_dens_stage1<-q1_dens_stage1-q2_dens_stage1
+
+ alpha_hat_MLE<-optimize(var_MLE_est_1,interval=c(delta_lowbound,1),q1_dens=q1_dens_stage1,q2_dens=q2_dens_stage1,pi_dens=pi_dens_stage1,q_gamma=q_gamma_stage1,g_dens=g_dens_stage1,beta_output=0,n1=n01)$minimum
+
+ n11<-floor((n-n0)*alpha_hat_MLE); n12<-floor((n-n0)*(1-alpha_hat_MLE));
+ if(n11>1) x21<-as.matrix(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==1) x21<-t(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==0) x21<-NULL
+ if(n12>1) x22<-as.matrix(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==1) x22<-t(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==0) x22<-NULL
+ x2<-rbind(x21,x22)
+ 
+ # proposal t dens
+ q1_dens_stage2<-t_dens_joint(x2,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage2<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage2_part1<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_stage2_part2<-t_dens_joint(x2,mu_t_pi,df_t_pi)
+ 
+ pi_dens_stage2<-0.8*pi_dens_stage2_part1+0.2*pi_dens_stage2_part2
+ 
+ alpha_tilde<-n0/n*gamma_vec[1]+(n-n0)/n*alpha_hat_MLE
+ q1_dens<-c(q1_dens_stage1,q1_dens_stage2)
+ q2_dens<-c(q2_dens_stage1,q2_dens_stage2)
+ pi_dens<-c(pi_dens_stage1,pi_dens_stage2)
+ q_alpha<-alpha_tilde*q1_dens+(1-alpha_tilde)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ dens_all<-list(q1_dens,q2_dens)
+ zeta_optim_results<-optimize(l_fun_neg,interval=c(-1,1),dens_all=dens_all,prop=alpha_tilde)
+ zeta_optim<-zeta_optim_results$minimum
+ estimator_MLE<-mean(pi_dens/((alpha_tilde-zeta_optim)*q1_dens+(1-alpha_tilde+zeta_optim)*q2_dens))
+  
+ return(c(alpha_hat_MLE,estimator_MLE))
+}
+
+estimation_DIS_twostages<-function(n0,gamma_vec){
+ n01<-floor(n0*gamma_vec[1]); n02<-floor(n0*gamma_vec[2]);
+ 
+ x11<-as.matrix(data_all[[1]][1:n01,])
+ x12<-as.matrix(data_all[[2]][1:n02,])
+ x1<-rbind(x11,x12)
+ 
+ # proposal t dens
+ q1_dens_stage1<-t_dens_joint(x1,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage1<-norm_dens_joint(x1,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage1_part1<-norm_dens_joint(x1,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_stage1_part2<-t_dens_joint(x1,mu_t_pi,df_t_pi)
+ 
+ pi_dens_stage1<-0.8*pi_dens_stage1_part1+0.2*pi_dens_stage1_part2
+ q_gamma_stage1<-gamma_vec[1]*q1_dens_stage1+gamma_vec[2]*q2_dens_stage1
+ g_dens_stage1<-q1_dens_stage1-q2_dens_stage1
+
+ alpha_hat_DIS<-optimize(var_DIS_est,interval=c(0,1),q1_dens=q1_dens_stage1,q2_dens=q2_dens_stage1,pi_dens=pi_dens_stage1,q_gamma=q_gamma_stage1,n1=n01)$minimum
+
+ n11<-floor((n-n0)*alpha_hat_DIS); n12<-floor((n-n0)*(1-alpha_hat_DIS));
+ if(n11>1) x21<-as.matrix(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==1) x21<-t(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==0) x21<-NULL
+ if(n12>1) x22<-as.matrix(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==1) x22<-t(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==0) x22<-NULL
+ x2<-rbind(x21,x22)
+ 
+ # proposal t dens
+ q1_dens_stage2<-t_dens_joint(x2,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage2<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage2_part1<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_stage2_part2<-t_dens_joint(x2,mu_t_pi,df_t_pi)
+ 
+ pi_dens_stage2<-0.8*pi_dens_stage2_part1+0.2*pi_dens_stage2_part2
+ 
+ alpha_tilde<-n0/n*gamma_vec[1]+(n-n0)/n*alpha_hat_DIS
+ q1_dens<-c(q1_dens_stage1,q1_dens_stage2)
+ q2_dens<-c(q2_dens_stage1,q2_dens_stage2)
+ pi_dens<-c(pi_dens_stage1,pi_dens_stage2)
+ q_alpha<-alpha_tilde*q1_dens+(1-alpha_tilde)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ estimator_DIS<-mean(pi_dens/q_alpha)
+  
+ return(c(alpha_hat_DIS,estimator_DIS))
+}
+
+
+est_DIS<-0
+est_MLE<-0
+est_q2<-0
+alpha_hat_DIS_twostages<-0
+est_DIS_twostages<-0
+alpha_hat_MLE_twostages<-0
+est_MLE_twostages<-0
+
+for(i in 1:replic){
+  x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+  data_all<-list(x1,x2)
+  
+  results_est_DIS<-estimation_DIS(0.5)
+  est_DIS[i]<-results_est_DIS
+  
+  results_est_DIS_twostages<-estimation_DIS_twostages(n0,c(0.5,0.5))
+  alpha_hat_DIS_twostages[i]<-results_est_DIS_twostages[1]
+  est_DIS_twostages[i]<-results_est_DIS_twostages[2]
+
+  results_est_MLE<-estimation_MLE(0.5) 
+  est_MLE[i]<-results_est_MLE
+
+  results_est_MLE_twostages<-estimation_MLE_twostages(n0,c(0.5,0.5))
+  alpha_hat_MLE_twostages[i]<-results_est_MLE_twostages[1]
+  est_MLE_twostages[i]<-results_est_MLE_twostages[2]
+}
+
+# proposal q2
+for(i in 1:replic){
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+
+  results_est_0<-estimation_q2(n)
+  est_q2[i]<-results_est_0
+}
+
+alpha_hat_MLE<-mean(alpha_hat_MLE_twostages)
+var_MLE_twostages<-var(est_MLE_twostages)*n
+mean_MLE_twostages<-mean(est_MLE_twostages)
+
+alpha_hat_DIS<-mean(alpha_hat_DIS_twostages)
+var_DIS_twostages<-var(est_DIS_twostages)*n
+mean_DIS_twostages<-mean(est_DIS_twostages)
+ 
+var_DIS<-var(est_DIS)*n 
+mean_DIS<-mean(est_DIS)
+
+var_MLE<-var(est_MLE)*n
+mean_MLE<-mean(est_MLE)
+
+results<-matrix(c(0.5,0.5,alpha_hat_DIS,alpha_hat_MLE,var_DIS,var_MLE,var_DIS_twostages,var_MLE_twostages,mean_DIS,mean_MLE,mean_DIS_twostages,mean_MLE_twostages),4,3)
+colnames(results)<-c("alpha","n*var","mean")
+rownames(results)<-c("DIS","MLE","DIS_twostage","MLE_twostage")
+results
+
+}
+
+#####################################################
+# asymptotic performance B2 expectation
+{####################################################
+mu_norm_pi<-rep(0,10); sigma_norm_pi<-rep(1,10);
+mu_norm_q2<-rep(0,10); sigma_norm_q2<-rep(1,10); 
+mu_t_pi<-0; df_t_pi<-4; 
+mu_t_q1<-0; df_t_q1<-2
+
+n=2000000; dimension<-10; replic<-10; alpha_pi<-.8
+
+var_half_DIS_expec<-list(0)
+alpha_opt_DIS_expec<-list(0)
+var_opt_DIS_expec<-list(0)
+var_half_MLE_expec<-list(0)
+alpha_opt_MLE_expec<-list(0)
+var_opt_MLE_expec<-list(0)
+var_0_DIS_expec<-list(0)
+
+gamma_vec<-c(.5,.5)
+n1<-n*gamma_vec[1]
+n2<-n*gamma_vec[2]
+
+for(i in 1:replic){
+ x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)  
+ x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+ data_all<-list(0,0)
+ data_all[[1]]<-x1
+ data_all[[2]]<-x2
+
+ aa1<-as.matrix(data_all[[1]][1:n1,])
+ aa2<-as.matrix(data_all[[2]][1:n2,])
+ x<-rbind(aa1,aa2)
+
+  # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_part1<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_part2<-t_dens_joint(x,mu_t_pi,df_t_pi)
+
+ pi_dens<-0.8*pi_dens_part1+0.2*pi_dens_part2
+ q_gamma<-gamma_vec[1]*q1_dens+gamma_vec[2]*q2_dens
+ g_dens<-q1_dens-q2_dens
+ h<-rowSums(x^2)/dimension
+ temp<-!((pi_dens==0)&(q_gamma==0))
+ mu_hat<-mean((h*pi_dens/q_gamma)[temp])/mean((pi_dens/q_gamma)[temp])
+
+ var_half_DIS_expec_results<-var_DIS_expec_est(.5,h,mu_hat,q1_dens,q2_dens,pi_dens,q_gamma,n1)
+ var_half_DIS_expec[[i]]<-var_half_DIS_expec_results
+ 
+ alpha_results_DIS_expec<-optimize(var_DIS_expec_est,interval=c(delta_lowbound,1),h=h,mu_hat=mu_hat,q1_dens=q1_dens,q2_dens=q2_dens,pi_dens=pi_dens,q_gamma=q_gamma,n1=n1)
+ alpha_opt_DIS_expec[[i]]<-alpha_results_DIS_expec$minimum
+ var_opt_DIS_expec[[i]]<-alpha_results_DIS_expec$objective
+
+ var_half_MLE_expec_results<-var_MLE_expec_est(.5,h,mu_hat,q1_dens,q2_dens,pi_dens,q_gamma,g_dens,0)
+ var_half_MLE_expec[[i]]<-var_half_MLE_expec_results
+  
+ alpha_results_MLE_expec<-optimize(var_MLE_expec_est,interval=c(delta_lowbound,1),h=h,mu_hat=mu_hat,q1_dens=q1_dens,q2_dens=q2_dens,pi_dens=pi_dens,q_gamma=q_gamma,g_dens=g_dens,beta_output=0)
+ alpha_opt_MLE_expec[[i]]<-alpha_results_MLE_expec$minimum
+ var_opt_MLE_expec[[i]]<-alpha_results_MLE_expec$objective
+
+ aa0<-as.matrix(data_all[[2]][1:n,])
+ h0<-rowSums(aa0^2)/dimension
+ 
+ # proposal Normal dens
+ q2_dens_0<-norm_dens_joint(aa0,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_0_part1<-norm_dens_joint(aa0,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_0_part2<-t_dens_joint(aa0,mu_t_pi,df_t_pi)
+ 
+ pi_dens_0<-alpha_pi*pi_dens_0_part1+(1-alpha_pi)*pi_dens_0_part2
+
+ mu_hat0<-mean(h0*pi_dens_0/q2_dens_0)/mean(pi_dens_0/q2_dens_0)
+
+ var_0_DIS_expec_results<-var_DIS_expec_est(0,h0,mu_hat0,q1_dens,q2_dens_0,pi_dens_0,q_gamma,0)
+ var_0_DIS_expec[[i]]<-var_0_DIS_expec_results
+}
+
+c(0.5,var_half_DIS_expec=mean(unlist(var_half_DIS_expec)))
+c(mean(unlist(alpha_opt_DIS_expec)),var_opt_DIS_expec=mean(unlist(var_opt_DIS_expec)))
+c(0.5,var_half_MLE_expec=mean(unlist(var_half_MLE_expec)))
+c(mean(unlist(alpha_opt_MLE_expec)),var_opt_MLE_expec=mean(unlist(var_opt_MLE_expec)))
+c(0,var_0_DIS_expec=mean(unlist(var_0_DIS_expec)))
+
+}
+
+##############################################################
+# two-stage performance B2 expectation
+# use var_est, 400 for 1st stage
+{#############################################################
+n=4000; replic=1000; dimension<-10; n0<-400
+
+mu_norm_pi<-rep(0,10); sigma_norm_pi<-rep(1,10);
+mu_norm_q2<-rep(0,10); sigma_norm_q2<-rep(1,10); 
+mu_t_pi<-0; df_t_pi<-4; 
+mu_t_q1<-0; df_t_q1<-2
+
+
+# fix mixture proportions
+estimation_MLE<-function(alpha){
+ n1<-floor(n*alpha); n2<-floor(n*(1-alpha));
+ 
+ x1<-data_all[[1]][1:n1,]
+ x2<-data_all[[2]][1:n2,]
+ x<-rbind(x1,x2)
+
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_part1<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_part2<-t_dens_joint(x,mu_t_pi,df_t_pi)
+ 
+ pi_dens<-0.8*pi_dens_part1+0.2*pi_dens_part2
+ 
+ q_alpha<-alpha*q1_dens+(1-alpha)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ h<-rowSums(x^2)/dimension
+
+ dens_all<-list(q1_dens,q2_dens)
+ zeta_optim_results<-optimize(l_fun_neg,interval=c(-1,1),dens_all=dens_all,prop=alpha)
+ zeta_optim<-zeta_optim_results$minimum
+ q_alpha_zeta<-(alpha-zeta_optim)*q1_dens+(1-alpha+zeta_optim)*q2_dens
+ estimator_MLE<-mean(h*pi_dens/q_alpha_zeta)/mean(pi_dens/q_alpha_zeta) 
+
+ return(estimator_MLE)
+}
+
+estimation_DIS<-function(alpha){
+ n1<-floor(n*alpha); n2<-floor(n*(1-alpha));
+ 
+ x1<-data_all[[1]][1:n1,]
+ x2<-data_all[[2]][1:n2,]
+ x<-rbind(x1,x2)
+ 
+ # proposal t dens
+ q1_dens<-t_dens_joint(x,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_part1<-norm_dens_joint(x,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_part2<-t_dens_joint(x,mu_t_pi,df_t_pi)
+ 
+ pi_dens<-0.8*pi_dens_part1+0.2*pi_dens_part2
+ 
+ q_alpha<-alpha*q1_dens+(1-alpha)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ h<-rowSums(x^2)/dimension
+
+ estimator_DIS<-mean(h*pi_dens/q_alpha)/mean(pi_dens/q_alpha)
+
+ return(estimator_DIS)
+}
+
+estimation_q2<-function(n){ 
+ x2<-data_all[[2]][1:n,]
+ 
+ # proposal Normal dens
+ q2_dens<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_part1<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_part2<-t_dens_joint(x2,mu_t_pi,df_t_pi)
+ 
+ pi_dens<-0.8*pi_dens_part1+0.2*pi_dens_part2
+ h<-rowSums(x2^2)/dimension
+
+ estimator_DIS<-mean(h*pi_dens/q2_dens)/mean(pi_dens/q2_dens)
+
+ return(estimator_DIS)
+}
+
+for(i in 1:replic){
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+
+  results_est_0<-estimation_q2(n)
+  est_q2[i]<-results_est_0
+}
+
+# two-stage mixture proportions 
+estimation_MLE_twostages<-function(n0,gamma_vec){
+ n01<-floor(n0*gamma_vec[1]); n02<-floor(n0*gamma_vec[2]);
+ 
+ x11<-as.matrix(data_all[[1]][1:n01,])
+ x12<-as.matrix(data_all[[2]][1:n02,])
+ x1<-rbind(x11,x12)
+
+ # proposal t dens
+ q1_dens_stage1<-t_dens_joint(x1,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage1<-norm_dens_joint(x1,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage1_part1<-norm_dens_joint(x1,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_stage1_part2<-t_dens_joint(x1,mu_t_pi,df_t_pi)
+ 
+ pi_dens_stage1<-0.8*pi_dens_stage1_part1+0.2*pi_dens_stage1_part2
+ q_gamma_stage1<-gamma_vec[1]*q1_dens_stage1+gamma_vec[2]*q2_dens_stage1
+ g_dens_stage1<-q1_dens_stage1-q2_dens_stage1
+
+ temp<-!((pi_dens_stage1==0)&(q_gamma_stage1==0))
+ h_stage1<-rowSums(x1^2)/dimension
+ mu_hat_stage1<-mean((h_stage1*pi_dens_stage1/q_gamma_stage1)[temp])/mean((pi_dens_stage1/q_gamma_stage1)[temp])
+  
+ alpha_hat_MLE<-optimize(var_MLE_expec_est,interval=c(delta_lowbound,1),h=h_stage1,mu_hat=mu_hat_stage1,q1_dens=q1_dens_stage1,q2_dens=q2_dens_stage1,pi_dens=pi_dens_stage1,q_gamma=q_gamma_stage1,g_dens=g_dens_stage1,beta_output=0)$minimum
+
+ n11<-floor((n-n0)*alpha_hat_MLE); n12<-floor((n-n0)*(1-alpha_hat_MLE));
+ if(n11>1) x21<-as.matrix(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==1) x21<-t(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==0) x21<-NULL
+ if(n12>1) x22<-as.matrix(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==1) x22<-t(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==0) x22<-NULL
+ x2<-rbind(x21,x22)
+
+ # proposal t dens
+ q1_dens_stage2<-t_dens_joint(x2,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage2<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage2_part1<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_stage2_part2<-t_dens_joint(x2,mu_t_pi,df_t_pi)
+
+ pi_dens_stage2<-0.8*pi_dens_stage2_part1+0.2*pi_dens_stage2_part2
+
+ h<-rowSums(rbind(x11,x12,x21,x22)^2)/dimension
+ 
+ alpha_tilde<-n0/n*gamma_vec[1]+(n-n0)/n*alpha_hat_MLE
+ q1_dens<-c(q1_dens_stage1,q1_dens_stage2)
+ q2_dens<-c(q2_dens_stage1,q2_dens_stage2)
+ pi_dens<-c(pi_dens_stage1,pi_dens_stage2)
+ q_alpha<-alpha_tilde*q1_dens+(1-alpha_tilde)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ dens_all<-list(q1_dens,q2_dens)
+ zeta_optim_results<-optimize(l_fun_neg,interval=c(-1,1),dens_all=dens_all,prop=alpha_tilde)
+ zeta_optim<-zeta_optim_results$minimum
+ q_alpha_zeta<-(alpha_tilde-zeta_optim)*q1_dens+(1-alpha_tilde+zeta_optim)*q2_dens
+ estimator_MLE<-mean(h*pi_dens/q_alpha_zeta)/mean(pi_dens/q_alpha_zeta)
+
+ return(c(alpha_hat_MLE,estimator_MLE))
+}
+
+estimation_DIS_twostages<-function(n0,gamma_vec){
+ n01<-floor(n0*gamma_vec[1]); n02<-floor(n0*gamma_vec[2]);
+ 
+ x11<-as.matrix(data_all[[1]][1:n01,])
+ x12<-as.matrix(data_all[[2]][1:n02,])
+ x1<-rbind(x11,x12)
+
+ # proposal t dens
+ q1_dens_stage1<-t_dens_joint(x1,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage1<-norm_dens_joint(x1,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage1_part1<-norm_dens_joint(x1,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_stage1_part2<-t_dens_joint(x1,mu_t_pi,df_t_pi)
+ 
+ pi_dens_stage1<-0.8*pi_dens_stage1_part1+0.2*pi_dens_stage1_part2
+ q_gamma_stage1<-gamma_vec[1]*q1_dens_stage1+gamma_vec[2]*q2_dens_stage1
+ g_dens_stage1<-q1_dens_stage1-q2_dens_stage1
+
+ temp<-!((pi_dens_stage1==0)&(q_gamma_stage1==0))
+ h_stage1<-rowSums(x1^2)/dimension
+ mu_hat_stage1<-mean((h_stage1*pi_dens_stage1/q_gamma_stage1)[temp])/mean((pi_dens_stage1/q_gamma_stage1)[temp])
+  
+ alpha_hat_DIS<-optimize(var_DIS_expec_est,interval=c(delta_lowbound,1),h=h_stage1,mu_hat=mu_hat_stage1,q1_dens=q1_dens_stage1,q2_dens=q2_dens_stage1,pi_dens=pi_dens_stage1,q_gamma=q_gamma_stage1,n1=n01)$minimum
+
+ n11<-floor((n-n0)*alpha_hat_DIS); n12<-floor((n-n0)*(1-alpha_hat_DIS));
+ if(n11>1) x21<-as.matrix(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==1) x21<-t(data_all[[1]][(n01+1):(n01+n11),])
+ if(n11==0) x21<-NULL
+ if(n12>1) x22<-as.matrix(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==1) x22<-t(data_all[[2]][(n02+1):(n02+n12),])
+ if(n12==0) x22<-NULL
+ x2<-rbind(x21,x22)
+
+ # proposal t dens
+ q1_dens_stage2<-t_dens_joint(x2,mu_t_q1,df_t_q1)
+ 
+ # proposal Normal dens
+ q2_dens_stage2<-norm_dens_joint(x2,mu_norm_q2,sigma_norm_q2)
+
+ # target normal dens  
+ pi_dens_stage2_part1<-norm_dens_joint(x2,mu_norm_pi,sigma_norm_pi)
+
+  # target t dens  
+ pi_dens_stage2_part2<-t_dens_joint(x2,mu_t_pi,df_t_pi)
+
+ pi_dens_stage2<-0.8*pi_dens_stage2_part1+0.2*pi_dens_stage2_part2
+
+ h<-rowSums(rbind(x11,x12,x21,x22)^2)/dimension
+ 
+ alpha_tilde<-n0/n*gamma_vec[1]+(n-n0)/n*alpha_hat_DIS
+ q1_dens<-c(q1_dens_stage1,q1_dens_stage2)
+ q2_dens<-c(q2_dens_stage1,q2_dens_stage2)
+ pi_dens<-c(pi_dens_stage1,pi_dens_stage2)
+ q_alpha<-alpha_tilde*q1_dens+(1-alpha_tilde)*q2_dens
+ g_dens<-q1_dens-q2_dens
+ 
+ estimator_DIS<-mean(h*pi_dens/q_alpha)/mean(pi_dens/q_alpha)
+
+ return(c(alpha_hat_DIS,estimator_DIS))
+}
+
+est_DIS<-0
+est_MLE<-0
+est_q2<-0
+alpha_hat_DIS_twostages<-0
+est_DIS_twostages<-0
+alpha_hat_MLE_twostages<-0
+est_MLE_twostages<-0
+
+
+save.time<-proc.time()
+for(i in 1:replic){
+  x1<-matrix(rt(n*dimension,df_t_q1)+mu_t_q1,ncol=dimension)
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+  data_all<-list(x1,x2)
+  
+  results_est_DIS<-estimation_DIS(0.5)
+  est_DIS[i]<-results_est_DIS
+  
+  results_est_DIS_twostages<-estimation_DIS_twostages(n0,c(0.5,0.5))
+  alpha_hat_DIS_twostages[i]<-results_est_DIS_twostages[1]
+  est_DIS_twostages[i]<-results_est_DIS_twostages[2]
+
+  results_est_MLE<-estimation_MLE(0.5) 
+  est_MLE[i]<-results_est_MLE
+
+  results_est_MLE_twostages<-estimation_MLE_twostages(n0,c(0.5,0.5))
+  alpha_hat_MLE_twostages[i]<-results_est_MLE_twostages[1]
+  est_MLE_twostages[i]<-results_est_MLE_twostages[2]
+}
+proc.time()-save.time
+
+# proposal q2
+for(i in 1:replic){
+  x2<-mvrnorm(n,mu=mu_norm_q2,Sigma=diag(sigma_norm_q2^2))
+
+  results_est_0<-estimation_q2(n)
+  est_q2[i]<-results_est_0
+}
+
+alpha_hat_MLE<-mean(alpha_hat_MLE_twostages)
+var_MLE_twostages<-var(est_MLE_twostages)*n
+mean_MLE_twostages<-mean(est_MLE_twostages)
+
+alpha_hat_DIS<-mean(alpha_hat_DIS_twostages)
+var_DIS_twostages<-var(est_DIS_twostages)*n
+mean_DIS_twostages<-mean(est_DIS_twostages)
+ 
+var_DIS<-var(est_DIS)*n 
+mean_DIS<-mean(est_DIS)
+
+var_MLE<-var(est_MLE)*n
+mean_MLE<-mean(est_MLE)
+
+var_q2<-var(est_q2)*n
+mean_q2<-mean(est_q2)
+
+results<-matrix(c(0.5,0.5,alpha_hat_DIS,alpha_hat_MLE,var_DIS,var_MLE,var_DIS_twostages,var_MLE_twostages,mean_DIS,mean_MLE,mean_DIS_twostages,mean_MLE_twostages),4,3)
+colnames(results)<-c("alpha","n*var","mean")
+rownames(results)<-c("DIS","MLE","DIS_twostage","MLE_twostage")
+results
+
+}
+
+
+#######################
+# Hesterberg's example
+######################
+
+# take random samples and proposal densities
+gamma_dens_log<-function(x,shape,scale_gamma){
+ c_gamma=log(gamma(shape))
+ dens_log<--x/scale_gamma+(shape-1)*log(x)-c_gamma-shape*log(scale_gamma)
+ return(dens_log)
+}
+
+gamma_tilt_dens_log<-function(x,shape,scale_gamma,alpha){
+ c_gamma=log(gamma(shape))
+ dens_log<--(alpha+1/scale_gamma)*x+(shape-1)*log(x)-c_gamma-shape*log(scale_gamma/(1+alpha*scale_gamma))
+ return(dens_log)
+}
+
+exponen_dens_log<-function(x){ # truncated exponential
+ c_exp=log(100*(exp(3)-1))
+ dens_log<-x/100-c_exp
+ return(dens_log)
+}
+
+exponen_tilt_dens_log<-function(x,alpha){ # truncated exponential tilted
+ dens_log<-(1/100-alpha)*x+log((1/100-alpha)/(exp(3-300*alpha)-1))
+ return(dens_log)
+}
+
+norm_dens_log<-function(x,mu,sigma){
+ c_normal<-log(2*pi)/2+log(sigma)
+ dens_log<--(x-mu)^2/2/sigma^2-c_normal
+ return(dens_log)
+}
+
+norm_tilt_dens_log<-function(x,mu,sigma,alpha){
+ c_normal<-log(2*pi)/2+log(sigma)
+ dens_log<--(x-mu-alpha*sigma^2)^2/2/sigma^2-c_normal
+ return(dens_log)
+}
+
+norm_temp_tilt_dens_log<-function(x,mu,sigma,alpha){
+ c_normal<-log(2*pi)/2+log(sigma)
+ dens_log<--(x-mu+alpha*(10+40)*sigma^2)^2/2/sigma^2-c_normal
+ return(dens_log)
+}
+
+
+gamma_sample<-function(n,shape,scale_gamma){
+ samples<-rgamma(n,shape=shape,scale=scale_gamma)
+ return(samples)
+}
+
+gamma_tilt_sample<-function(n,shape,scale_gamma,alpha){
+ samples<-rgamma(n,shape=shape,scale=1/(1/scale_gamma+alpha))
+ return(samples)
+}
+
+exponen_sample<-function(n){
+ samples_unif<-runif(n)
+ samples<-300*log(samples_unif*(exp(3)-1)+1)/3
+ return(samples)
+}
+
+exponen_tilt_sample<-function(n,alpha){
+ samples_unif<-runif(n)
+ samples<-300*log(samples_unif*(exp(3-alpha*300)-1)+1)/(3-alpha*300)
+ return(samples)
+}
+
+norm_sample<-function(n,mu,sigma){
+ samples<-rnorm(n,mu,sigma)
+ return(samples)
+}
+
+norm_tilt_sample<-function(n,mu,sigma,alpha){
+ samples<-rnorm(n,mu+alpha*sigma^2,sigma)
+ return(samples)
+}
+
+norm_temp_tilt_sample<-function(n,mu,sigma,alpha){
+ samples<-rnorm(n,mu-alpha*(10+40)*sigma^2,sigma)
+ return(samples) 
+}
+
+sample_all<-function(n,par_m1,par_m2,par_m3){
+ # output matrices are 3*n
+ 
+ x_11_samples<-gamma_sample(n,par_m1[1,1],par_m1[1,2])
+ x_12_samples<-gamma_sample(n,par_m2[1,1],par_m2[1,2])
+ x_13_samples<-gamma_sample(n,par_m3[1,1],par_m3[1,2])
+ 
+ x_21_samples<-exponen_sample(n)
+ x_22_samples<-exponen_sample(n)
+ x_23_samples<-exponen_sample(n)
+
+ x_31_samples<-norm_sample(n,par_m1[3,1],par_m1[3,2])
+ x_32_samples<-norm_sample(n,par_m2[3,1],par_m2[3,2])
+ x_33_samples<-norm_sample(n,par_m3[3,1],par_m3[3,2])
+
+ x_41_prime_samples<-norm_sample(n,par_m1[4,1],par_m1[4,2])
+ x_42_prime_samples<-norm_sample(n,par_m2[4,1],par_m2[4,2])
+ x_43_prime_samples<-norm_sample(n,par_m3[4,1],par_m3[4,2])
+ x_41_samples<-x_41_prime_samples+10*(60-x_31_samples+abs(60-x_31_samples))/2
+ x_42_samples<-x_42_prime_samples+10*(60-x_32_samples+abs(60-x_32_samples))/2
+ x_43_samples<-x_43_prime_samples+10*(60-x_33_samples+abs(60-x_33_samples))/2
+
+ x_51_prime_samples<-norm_sample(n,par_m1[5,1],par_m1[5,2])
+ x_52_prime_samples<-norm_sample(n,par_m2[5,1],par_m2[5,2])
+ x_53_prime_samples<-norm_sample(n,par_m3[5,1],par_m3[5,2])
+ x_51_samples<-x_51_prime_samples+40*(60-x_31_samples+abs(60-x_31_samples))/2
+ x_52_samples<-x_52_prime_samples+40*(60-x_32_samples+abs(60-x_32_samples))/2
+ x_53_samples<-x_53_prime_samples+40*(60-x_33_samples+abs(60-x_33_samples))/2
+
+ Hydro<-rbind(x_11_samples,x_12_samples,x_13_samples)
+ Nuclear<-rbind(x_21_samples,x_22_samples,x_23_samples)
+ Temperature<-rbind(x_31_samples,x_32_samples,x_33_samples)
+ ElectricDemand<-rbind(x_41_samples,x_42_samples,x_43_samples)
+ GasDemand<-rbind(x_51_samples,x_52_samples,x_53_samples)
+
+ return(list(Hydro,Nuclear,Temperature,ElectricDemand,GasDemand))
+}
+
+sample_tilt_all<-function(n,par_m1,par_m2,par_m3,alpha){
+
+ x_11_samples<-gamma_tilt_sample(n,par_m1[1,1],par_m1[1,2],alpha[1])
+ x_12_samples<-gamma_tilt_sample(n,par_m2[1,1],par_m2[1,2],alpha[2])
+ x_13_samples<-gamma_tilt_sample(n,par_m3[1,1],par_m3[1,2],alpha[3])
+ 
+ x_21_samples<-exponen_tilt_sample(n,alpha[1])
+ x_22_samples<-exponen_tilt_sample(n,alpha[2])
+ x_23_samples<-exponen_tilt_sample(n,alpha[3])
+
+ x_31_samples<-norm_temp_tilt_sample(n,par_m1[3,1],par_m1[3,2],alpha[1])
+ x_32_samples<-norm_temp_tilt_sample(n,par_m2[3,1],par_m2[3,2],alpha[2])
+ x_33_samples<-norm_temp_tilt_sample(n,par_m3[3,1],par_m3[3,2],alpha[3])
+
+ x_41_prime_samples<-norm_tilt_sample(n,par_m1[4,1],par_m1[4,2],alpha[1])
+ x_42_prime_samples<-norm_tilt_sample(n,par_m2[4,1],par_m2[4,2],alpha[2])
+ x_43_prime_samples<-norm_tilt_sample(n,par_m3[4,1],par_m3[4,2],alpha[3])
+ x_41_samples<-x_41_prime_samples+10*(60-x_31_samples+abs(60-x_31_samples))/2
+ x_42_samples<-x_42_prime_samples+10*(60-x_32_samples+abs(60-x_32_samples))/2
+ x_43_samples<-x_43_prime_samples+10*(60-x_33_samples+abs(60-x_33_samples))/2
+
+ x_51_prime_samples<-norm_tilt_sample(n,par_m1[5,1],par_m1[5,2],alpha[1])
+ x_52_prime_samples<-norm_tilt_sample(n,par_m2[5,1],par_m2[5,2],alpha[2])
+ x_53_prime_samples<-norm_tilt_sample(n,par_m3[5,1],par_m3[5,2],alpha[3])
+ x_51_samples<-x_51_prime_samples+40*(60-x_31_samples+abs(60-x_31_samples))/2
+ x_52_samples<-x_52_prime_samples+40*(60-x_32_samples+abs(60-x_32_samples))/2
+ x_53_samples<-x_53_prime_samples+40*(60-x_33_samples+abs(60-x_33_samples))/2
+
+ Hydro<-rbind(x_11_samples,x_12_samples,x_13_samples)
+ Nuclear<-rbind(x_21_samples,x_22_samples,x_23_samples)
+ Temperature<-rbind(x_31_samples,x_32_samples,x_33_samples)
+ ElectricDemand<-rbind(x_41_samples,x_42_samples,x_43_samples)
+ GasDemand<-rbind(x_51_samples,x_52_samples,x_53_samples)
+
+ return(list(Hydro,Nuclear,Temperature,ElectricDemand,GasDemand))
+}
+
+dens_all_log<-function(sample_all,par_m1,par_m2,par_m3){
+
+ x_11_dens<-gamma_dens_log(sample_all[[1]][1,],par_m1[1,1],par_m1[1,2])
+ x_12_dens<-gamma_dens_log(sample_all[[1]][2,],par_m2[1,1],par_m2[1,2])
+ x_13_dens<-gamma_dens_log(sample_all[[1]][3,],par_m3[1,1],par_m3[1,2])
+ 
+ x_21_dens<-exponen_dens_log(sample_all[[2]][1,])
+ x_22_dens<-exponen_dens_log(sample_all[[2]][2,])
+ x_23_dens<-exponen_dens_log(sample_all[[2]][3,])
+
+ x_31_dens<-norm_dens_log(sample_all[[3]][1,],par_m1[3,1],par_m1[3,2])
+ x_32_dens<-norm_dens_log(sample_all[[3]][2,],par_m2[3,1],par_m2[3,2])
+ x_33_dens<-norm_dens_log(sample_all[[3]][3,],par_m3[3,1],par_m3[3,2])
+
+ x_41_prime_samples<-sample_all[[4]][1,]-10*(60-sample_all[[3]][1,]+abs(60-sample_all[[3]][1,]))/2
+ x_42_prime_samples<-sample_all[[4]][2,]-10*(60-sample_all[[3]][2,]+abs(60-sample_all[[3]][2,]))/2
+ x_43_prime_samples<-sample_all[[4]][3,]-10*(60-sample_all[[3]][3,]+abs(60-sample_all[[3]][3,]))/2
+ x_41_dens<-norm_dens_log(x_41_prime_samples,par_m1[4,1],par_m1[4,2])
+ x_42_dens<-norm_dens_log(x_42_prime_samples,par_m2[4,1],par_m2[4,2])
+ x_43_dens<-norm_dens_log(x_43_prime_samples,par_m3[4,1],par_m3[4,2])
+
+ x_51_prime_samples<-sample_all[[5]][1,]-40*(60-sample_all[[3]][1,]+abs(60-sample_all[[3]][1,]))/2
+ x_52_prime_samples<-sample_all[[5]][2,]-40*(60-sample_all[[3]][2,]+abs(60-sample_all[[3]][2,]))/2
+ x_53_prime_samples<-sample_all[[5]][3,]-40*(60-sample_all[[3]][3,]+abs(60-sample_all[[3]][3,]))/2
+ x_51_dens<-norm_dens_log(x_51_prime_samples,par_m1[5,1],par_m1[5,2])
+ x_52_dens<-norm_dens_log(x_52_prime_samples,par_m2[5,1],par_m2[5,2])
+ x_53_dens<-norm_dens_log(x_53_prime_samples,par_m3[5,1],par_m3[5,2])
+ 
+ obs_dens<-list(cbind(x_11_dens,x_21_dens,x_31_dens,x_41_dens,x_51_dens),cbind(x_12_dens,x_22_dens,x_32_dens,x_42_dens,x_52_dens),cbind(x_13_dens,x_23_dens,x_33_dens,x_43_dens,x_53_dens))
+
+ return(obs_dens)
+}
+
+dens_tilt_all_log<-function(sample_tilt_all,par_m1,par_m2,par_m3,alpha){
+ # 0.2s
+ x_11_dens<-gamma_tilt_dens_log(sample_tilt_all[[1]][1,],par_m1[1,1],par_m1[1,2],alpha[1])
+ x_12_dens<-gamma_tilt_dens_log(sample_tilt_all[[1]][2,],par_m2[1,1],par_m2[1,2],alpha[2])
+ x_13_dens<-gamma_tilt_dens_log(sample_tilt_all[[1]][3,],par_m3[1,1],par_m3[1,2],alpha[3])
+
+  #0.13s
+ x_21_dens<-exponen_tilt_dens_log(sample_tilt_all[[2]][1,],alpha[1])
+ x_22_dens<-exponen_tilt_dens_log(sample_tilt_all[[2]][2,],alpha[2])
+ x_23_dens<-exponen_tilt_dens_log(sample_tilt_all[[2]][3,],alpha[3])
+ 
+ # 0.23s
+ x_31_dens<-norm_temp_tilt_dens_log(sample_tilt_all[[3]][1,],par_m1[3,1],par_m1[3,2],alpha[1])
+ x_32_dens<-norm_temp_tilt_dens_log(sample_tilt_all[[3]][2,],par_m2[3,1],par_m2[3,2],alpha[2])
+ x_33_dens<-norm_temp_tilt_dens_log(sample_tilt_all[[3]][3,],par_m3[3,1],par_m3[3,2],alpha[3])
+
+ # 0.35s (reduced from 1.92s) 
+ x_41_prime_samples<-sample_tilt_all[[4]][1,]-10*((60-sample_tilt_all[[3]][1,])+abs(60-sample_tilt_all[[3]][1,]))/2
+ x_42_prime_samples<-sample_tilt_all[[4]][2,]-10*((60-sample_tilt_all[[3]][2,])+abs(60-sample_tilt_all[[3]][2,]))/2
+ x_43_prime_samples<-sample_tilt_all[[4]][3,]-10*((60-sample_tilt_all[[3]][3,])+abs(60-sample_tilt_all[[3]][3,]))/2
+
+ x_41_dens<-norm_tilt_dens_log(x_41_prime_samples,par_m1[4,1],par_m1[4,2],alpha[1])
+ x_42_dens<-norm_tilt_dens_log(x_42_prime_samples,par_m2[4,1],par_m2[4,2],alpha[2])
+ x_43_dens<-norm_tilt_dens_log(x_43_prime_samples,par_m3[4,1],par_m3[4,2],alpha[3])
+
+ x_51_prime_samples<-sample_tilt_all[[5]][1,]-40*((60-sample_tilt_all[[3]][1,])+abs(60-sample_tilt_all[[3]][1,]))/2
+ x_52_prime_samples<-sample_tilt_all[[5]][2,]-40*((60-sample_tilt_all[[3]][2,])+abs(60-sample_tilt_all[[3]][2,]))/2
+ x_53_prime_samples<-sample_tilt_all[[5]][3,]-40*((60-sample_tilt_all[[3]][3,])+abs(60-sample_tilt_all[[3]][3,]))/2
+
+ x_51_dens<-norm_tilt_dens_log(x_51_prime_samples,par_m1[5,1],par_m1[5,2],alpha[1])
+ x_52_dens<-norm_tilt_dens_log(x_52_prime_samples,par_m2[5,1],par_m2[5,2],alpha[2])
+ x_53_dens<-norm_tilt_dens_log(x_53_prime_samples,par_m3[5,1],par_m3[5,2],alpha[3])
+ 
+ obs_dens<-list(cbind(x_11_dens,x_21_dens,x_31_dens,x_41_dens,x_51_dens),cbind(x_12_dens,x_22_dens,x_32_dens,x_42_dens,x_52_dens),cbind(x_13_dens,x_23_dens,x_33_dens,x_43_dens,x_53_dens))
+
+ return(obs_dens)
+}
+
+# physical model
+max2<-function(y,x){ 
+ col_length<-dim(x)[2]; 
+ x_vec<-c(x)
+ results<-matrix((x_vec+y+abs(x_vec-y))/2,ncol=col_length)
+ return(results)
+}
+
+colsum<-function(x){
+ row_no<-dim(x)[1]; col_no<-dim(x)[2]
+ sum_over_col<-rep(0,col_no)
+ for(i in 1:row_no) sum_over_col<-sum_over_col+x[i,]
+ return(sum_over_col)
+}
+
+BlackBox<-function(GasDemand, ElectricDemand, Temperature, Hydro, Nuclear,OtherElectric=matrix(500,3,n), GasSupply=matrix(2500,3,n), OilInventory=1200,InventoryPrice=1, CurtailmentPrice=80){
+  ##Input matrices should have dimension 3 (months) * n (replications)
+  ##Other input is vectors, 3 monthly values
+  ##Internal matrices are 3 * n
+  ##Outputs are n * 3
+  n<-dim(Temperature)[2]
+  DegreeDays<-max(0,60-Temperature)
+  NetElectricDemand<-max2( 0, ElectricDemand )  # 0.06s (reduced from 1.85s)
+  GasFlow<- GasSupply -GasDemand
+  NetOilDemand<-max2( 0, NetElectricDemand - OtherElectric -Hydro - Nuclear - GasFlow )
+  CumOilDemand<-rbind(NetOilDemand[1,],colsum(NetOilDemand[1:2,]),colsum(NetOilDemand)) # 0.16s (reduced from 0.57s)
+  CumCurtailment<-max2( 0, CumOilDemand - OilInventory )
+  SOilInventory<-OilInventory - CumOilDemand + CumCurtailment
+  OutageCost<-CurtailmentPrice * CumCurtailment[3,]
+  InventoryCost<-InventoryPrice * colsum(SOilInventory)
+  TotalCost<-InventoryCost + OutageCost
+  dimnames(SOilInventory)<-list(paste("Invent",1:3),NULL)
+  ShortageInd<-(CumCurtailment[3,]>0)
+
+  list(OutageCost=OutageCost,InventoryCost=InventoryCost,TotalCost=TotalCost,OilInventory = t(SOilInventory),ShortageInd,CumOilDemand)
+}
+
+
+# take part of samples from the list type dataset
+takesamples<-function(m_vec,data_all){
+ data_take<-list(NULL)
+ l<-length(m_vec)
+ if(l>1){ 
+   data_take[[1]]<-data_all[[1]][,m_vec]
+   data_take[[2]]<-data_all[[2]][,m_vec]
+   data_take[[3]]<-data_all[[3]][,m_vec]
+   data_take[[4]]<-data_all[[4]][,m_vec]
+   data_take[[5]]<-data_all[[5]][,m_vec]
+ }
+ if(l==1){
+   data_take[[1]]<-as.matrix(data_all[[1]][,m_vec])
+   data_take[[2]]<-as.matrix(data_all[[2]][,m_vec])
+   data_take[[3]]<-as.matrix(data_all[[3]][,m_vec])
+   data_take[[4]]<-as.matrix(data_all[[4]][,m_vec])
+   data_take[[5]]<-as.matrix(data_all[[5]][,m_vec])
+ }
+ return(data_take)
+}
+
+# combine the list elements of several lists
+list_cbind<-function(x){
+ number_of_lists<-length(x); length_of_eachlist<-length(x[[1]])
+ combine_list<-as.list(rep(1,length_of_eachlist))
+ for(i in 1:length_of_eachlist){
+  temp<-NULL
+  for(j in 1:number_of_lists) temp<-cbind(temp,x[[j]][[i]])
+  combine_list[[i]]<-temp
+ }
+ return(combine_list)
+}
+
+# calculate r_i
+r_calculation<-function(obs){
+ oil_req_month1<-apply(obs[[1]],1,sum)
+ oil_req_month2<-apply(obs[[2]],1,sum)
+ oil_req_month3<-apply(obs[[3]],1,sum)
+ oil_req_total<-oil_req_month1+oil_req_month2+oil_req_month3
+ r<-cor(oil_req_total,cbind(oil_req_month1,oil_req_month2,oil_req_month3))
+ return(r)
+}
+
+# calculate the 99% quantile of oil_req under f
+oil_req_quant<-function(n,par_m1,par_m2,par_m3){
+ x_11_samples<-gamma_sample(n,par_m1[1,1],par_m1[1,2])
+ x_12_samples<-gamma_sample(n,par_m2[1,1],par_m2[1,2])
+ x_13_samples<-gamma_sample(n,par_m3[1,1],par_m3[1,2])
+ 
+ x_21_samples<-exponen_sample(n,par_m1[2,1])
+ x_22_samples<-exponen_sample(n,par_m2[2,1])
+ x_23_samples<-exponen_sample(n,par_m3[2,1])
+
+ x_31_samples<-norm_sample(n,par_m1[3,1],par_m1[3,2])
+ x_32_samples<-norm_sample(n,par_m2[3,1],par_m2[3,2])
+ x_33_samples<-norm_sample(n,par_m3[3,1],par_m3[3,2])
+
+ x_41_prime_samples<-norm_sample(n,par_m1[4,1],par_m1[4,2])
+ x_42_prime_samples<-norm_sample(n,par_m2[4,1],par_m2[4,2])
+ x_43_prime_samples<-norm_sample(n,par_m3[4,1],par_m3[4,2])
+ x_41_samples<-x_41_prime_samples+10*apply(cbind(60-x_31_samples,0),1,max)
+ x_42_samples<-x_42_prime_samples+10*apply(cbind(60-x_32_samples,0),1,max)
+ x_43_samples<-x_43_prime_samples+10*apply(cbind(60-x_33_samples,0),1,max)
+
+ x_51_prime_samples<-norm_sample(n,par_m1[5,1],par_m1[5,2])
+ x_52_prime_samples<-norm_sample(n,par_m2[5,1],par_m2[5,2])
+ x_53_prime_samples<-norm_sample(n,par_m3[5,1],par_m3[5,2])
+ x_51_samples<-x_51_prime_samples+40*apply(cbind(60-x_31_samples,0),1,max)
+ x_52_samples<-x_52_prime_samples+40*apply(cbind(60-x_32_samples,0),1,max)
+ x_53_samples<-x_53_prime_samples+40*apply(cbind(60-x_33_samples,0),1,max)
+
+ samples_total<-cbind(-x_11_samples,-x_12_samples,-x_13_samples,-x_21_samples,-x_22_samples,-x_23_samples,x_41_samples,x_42_samples,x_43_samples,x_51_samples,x_52_samples,x_53_samples)
+ oil_requir_samples<-apply(samples_total,1,sum)
+ return(oil_requir_samples)
+}
+
+# calculate the mean value of oil reqir at each month
+oil_req_mean<-function(alpha,par_m,OtherElectric=500,GasSupply=2500){
+ #browser()
+ mean_gamma<-par_m[1,1]/(1/par_m[1,2]+alpha)
+ mean_exp<-1/(1/100-alpha)*((2-300*alpha)*exp(3-300*alpha)+1)/(exp(3-300*alpha)-1)
+ mean_temp_tilt<-par_m[3,1]-alpha*(10+40)*par_m[3,2]^2
+ temp<-(mean_temp_tilt-60)/par_m[3,2]
+ mean_max_0_temp<-60-mean_temp_tilt+par_m[3,2]*dnorm(temp)/(1-pnorm(temp))
+ mean_N2<-par_m[4,1]+alpha*par_m[4,2]^2+10*mean_max_0_temp
+ mean_N3<-par_m[5,1]+alpha*par_m[5,2]^2+40*mean_max_0_temp
+ oil_req<-mean_N2+mean_N3-mean_gamma-mean_exp-OtherElectric-GasSupply
+ return(oil_req)
+}
+
+oil_req_mean_diff<-function(alpha,par_m1,par_m2,par_m3,whichmonth,mean_balance){
+ oil_req_mean_month1<-0; oil_req_mean_month2<-0; oil_req_mean_month3<-0
+ if(whichmonth[1]==1) oil_req_mean_month1<-oil_req_mean(alpha,par_m1)
+ if(whichmonth[2]==1) oil_req_mean_month2<-oil_req_mean(alpha,par_m2)
+ if(whichmonth[3]==1) oil_req_mean_month3<-oil_req_mean(alpha,par_m3)
+ oil_req<-oil_req_mean_month1+oil_req_mean_month2+oil_req_mean_month3
+ return(1200-oil_req-mean_balance)
+}
+
+# log-likelihood calculated in MLE method
+l_fun_neg<-function(zeta_vec,q_dens,g_dens,alpha_vec){
+ q_alpha_zeta<-t(alpha_vec)%*%q_dens+t(g_dens%*%zeta_vec)
+ if(sum(q_alpha_zeta<0)>0) return(Inf)
+ 
+ l_funval<-sum(log(q_alpha_zeta))
+ return(-l_funval)
+ }
+
+colProd<-function(x){ # input a m*n matrix
+ ncol_x<-dim(x)[2]; nrow_x<-dim(x)[1]
+ results_prod<-rep(1,nrow_x)
+ for(i in 1:ncol_x) results_prod<-results_prod*x[,i]
+ return(results_prod)
+}
+colSum<-function(x){ # input a m*n matrix
+ ncol_x<-dim(x)[2]; nrow_x<-dim(x)[1]
+ results_sum<-rep(0,nrow_x)
+ for(i in 1:ncol_x) results_sum<-results_sum+x[,i]
+ return(results_sum)
+}
+
+# functions for optimization algorithm
+ p<-8
+ I_G1_1<-NULL
+ for(i in 1:(p-1)) I_G1_1<-rbind(I_G1_1,diag(1,p-1))
+ I_G1_2_ele<-list(0)
+ for(i in 1:(p-1)) I_G1_2_ele[[i]]<-rep(1,p-1)
+ I_G1_2<-bdiag(I_G1_2_ele)
+ I_G2_1<-t(I_G1_1)
+ I_G2_2<-t(I_G1_2)
+
+ A1_index<-NULL; A1_re_index<-NULL # rearrange (p-1)*(p-1) k1*k2 matrices
+ k1<-p-1; k2<-p-1
+ for(i in 1:(p-1)){
+  for(j in 1:(p-1)){
+   A1_index<-rbind(A1_index,cbind(rep(1:k1,rep(k2,k1))+(i-1)*k1,rep(1:k2,k1)+(j-1)*k2))
+   A1_re_index<-rbind(A1_re_index,cbind(rep(1:k1,rep(k2,k1))+(j-1)*k1,rep(1:k2,k1)+(i-1)*k2))
+  }
+ }
+  
+ A2_index<-NULL; A2_re_index<-NULL # rearrange (p-1)*(p-1) k1*k2 matrices
+ k1<-p-1; k2<-1
+ for(i in 1:(p-1)){
+  for(j in 1:(p-1)){
+   A2_index<-rbind(A2_index,cbind(rep(1:k1,rep(k2,k1))+(i-1)*k1,rep(1:k2,k1)+(j-1)*k2))
+   A2_re_index<-rbind(A2_re_index,cbind(rep(1:k1,rep(k2,k1))+(j-1)*k1,rep(1:k2,k1)+(i-1)*k2))
+  }
+ }
+ 
+times<-function(x,y) return(x*y) 
+blockdiag<-function(A,k){
+ temp<-as.list(rep(1,k))
+ A_list<-lapply(temp,times,y=A)
+ return(bdiag(A_list))
+}
+
+blockdiag<-function(A,k){ # bdiag is costly, need modification
+ l1<-dim(A)[1]; l2<-dim(A)[2];
+ A_diag<-matrix(0,k*l1,k*l2)
+ for(i in 1:k) A_diag[((i-1)*l1+1):(i*l1),((i-1)*l2+1):(i*l2)]<-A
+ return(A_diag)
+}
+
+var_MLE_value<-function(alpha_vec_excludefirst,pi_dens,q_dens,h,mu_hat,q_gamma,g_dens){
+ if(sum(alpha_vec_excludefirst<0)>0||sum(alpha_vec_excludefirst)>0.999) return(list(value=Inf,gradient=Inf,hessian=Inf))
+ n0<-length(pi_dens)  
+ alpha_vec<-c(1-sum(alpha_vec_excludefirst),alpha_vec_excludefirst)
+ q_alpha<-t(alpha_vec)%*%q_dens
+ temp<-!((pi_dens==0)&(q_alpha==0))
+ pi_dens<-pi_dens[temp]
+ q_gamma<-q_gamma[temp]
+ g_dens<-g_dens[,temp]
+ q_alpha<-q_alpha[temp]
+ h<-h[temp]
+ #
+ cc1<-min(q_gamma)
+ q_gamma_temp<-q_gamma
+ q_gamma<-q_gamma/cc1
+ #
+ f<-(h-mu_hat)*pi_dens
+ part1_beta<-g_dens*(rep(1,p-1)%*%t(1/q_alpha))
+ part2_beta<-t(g_dens*(rep(1,p-1)%*%t(1/q_gamma)))
+ B_inv<-solve(part1_beta%*%part2_beta)
+ #
+ part4_beta<-f/q_gamma
+ part5_beta<-part1_beta%*%part4_beta
+ beta_MLE<-B_inv%*%part5_beta
+ #
+ G<-g_dens
+ tau1<-(f-c(t(beta_MLE)%*%G))/q_alpha/q_gamma
+ var_MLE_val<-mean(tau1^2*q_alpha*q_gamma) 
+ var_MLE_val<-var_MLE_val/cc1
+ return(var_MLE_val)
+}
+
+var_MLE_gradient<-function(alpha_vec_excludefirst,pi_dens,q_dens,h,mu_hat,q_gamma,g_dens){
+ if(sum(alpha_vec_excludefirst<0)>0||sum(alpha_vec_excludefirst)>0.999) return(list(value=Inf,gradient=Inf,hessian=Inf))
+ n0<-length(pi_dens)  
+ alpha_vec<-c(1-sum(alpha_vec_excludefirst),alpha_vec_excludefirst)
+ q_alpha<-t(alpha_vec)%*%q_dens
+ temp<-!((pi_dens==0)&(q_alpha==0))
+ pi_dens<-pi_dens[temp]
+ q_gamma<-q_gamma[temp]
+ g_dens<-g_dens[,temp]
+ q_alpha<-q_alpha[temp]
+ h<-h[temp]
+ #
+ cc1<-min(q_gamma)
+ q_gamma_temp<-q_gamma
+ q_gamma<-q_gamma/cc1
+ #
+ f<-(h-mu_hat)*pi_dens
+ part1_beta<-g_dens*(rep(1,p-1)%*%t(1/q_alpha))
+ part2_beta<-t(g_dens*(rep(1,p-1)%*%t(1/q_gamma)))
+ B_inv<-solve(part1_beta%*%part2_beta)
+ #
+ part4_beta<-f/q_gamma
+ part5_beta<-part1_beta%*%part4_beta
+ beta_MLE<-B_inv%*%part5_beta
+ #
+ #Q<-q_dens
+ G<-g_dens
+ tau1<-(f-c(t(beta_MLE)%*%G))/q_alpha/q_gamma
+ #tau2<-tau1/q_alpha
+ #tau3<-tau1^2/q_alpha*q_gamma
+ #
+ #q_alpha1<-1/q_alpha
+ q_alpha2_gamma<-1/q_alpha^2/q_gamma #could be Inf
+ C<-part5_beta
+ B_inv_C_diag<-blockdiag(B_inv%*%C,p-1)
+ #G1<-(I_G1_1%*%(G*(rep(1,p-1)%*%t(q_alpha1))))*(I_G1_2%*%G)
+ G2<-(t(G)%*%I_G2_1)*(((q_alpha2_gamma%*%t(rep(1,p-1)))*t(G))%*%I_G2_2)
+ G3<-((f*q_alpha2_gamma)%*%t(rep(1,p-1)))*t(G)
+ #G4<-((f*q_alpha1)%*%t(rep(1,p-1)))*t(G)
+ #
+ B_p<--G%*%G2
+ C_p<--G%*%G3
+ #
+ beta_gradient<-t(-B_inv%*%B_p%*%B_inv_C_diag+B_inv%*%C_p)
+
+ var_gradient_part1<-G%*%(tau1^2*q_gamma)/n0
+ var_gradient_part2<-beta_gradient%*%(G*(rep(1,p-1)%*%t(tau1)))%*%rep(1,n0)*2/n0
+ var_gradient<-as.vector(-var_gradient_part1-var_gradient_part2)
+
+ var_gradient<-var_gradient/cc1
+ return(var_gradient)
+}
+
+
+########################
+# Two-stage Procedure
+########################
+
+# simple random sampling
+estimation_simpleMC<-function(m){
+ samples_f<-takesamples(1:m,data_all[[1]])
+ Hydro<-samples_f[[1]]
+ Nuclear<-samples_f[[2]]
+ Temperature<-samples_f[[3]]
+ ElectricDemand<-samples_f[[4]]
+ GasDemand<-samples_f[[5]]
+ results<-BlackBox(GasDemand, ElectricDemand, Temperature, Hydro, Nuclear)
+ return(results)   
+}
+
+# fix mixture proportions
+estimation_det<-function(beta_vec,m,alpha_vec,tiltflags){
+ # beta_vec is the mixture proportions, m is the total sample size, alpha_vec is the tilted parameters and tiltflags is the tilted months of each proposal
+ samples<-list(0)
+ dens_samples_log<-matrix(0,8,m)
+ m_all<-c(m-sum(floor(m*beta_vec[2:8])),floor(m*beta_vec[2:8]))
+ 
+ # formal samples
+ for(i in 1:8){
+  if(m_all[i]>0) samples[[i]]<-takesamples(1:(m_all[i]),data_all[[i]])
+  if(m_all[i]==0) samples[[i]]<-list(NULL,NULL,NULL,NULL,NULL)
+ }
+ samples_all<-list_cbind(samples)
+ 
+ # joint densities  
+ for(i in 1:8){
+  dens_samples_log[i,]<-colSum(matrix(unlist(dens_tilt_all_log(samples_all,par_m1,par_m2,par_m3,alpha_vec[i]*tiltflags[,i])),ncol=15))
+}
+
+ # sample weights  
+ ratio_q_f<-exp(dens_samples_log[2:8,]-rep(1,7)%*%t(dens_samples_log[1,]))
+ weights_samples<-1/(beta_vec[1]+t(beta_vec[2:8])%*%ratio_q_f)
+  
+ # blackbox results  
+ Hydro<-samples_all[[1]]
+ Nuclear<-samples_all[[2]]
+ Temperature<-samples_all[[3]]
+ ElectricDemand<-samples_all[[4]]
+ GasDemand<-samples_all[[5]]
+ results<-BlackBox(GasDemand, ElectricDemand, Temperature, Hydro, Nuclear) 
+
+ return(list(results,c(weights_samples)))
+}
+
+estimation_MLE<-function(beta_vec,m,alpha_vec,tiltflags){
+ # beta_vec is the mixture proportions, m is the total sample size, alpha_vec is the tilted parameters and tiltflags is the tilted months of each proposal
+ samples<-list(0)
+ dens_samples_log<-matrix(0,8,m)
+ m_all<-c(m-sum(floor(m*beta_vec[2:8])),floor(m*beta_vec[2:8]))
+ 
+ # formal samples
+ for(i in 1:8){
+  if(m_all[i]>0) samples[[i]]<-takesamples(1:(m_all[i]),data_all[[i]])
+  if(m_all[i]==0) samples[[i]]<-list(NULL,NULL,NULL,NULL,NULL)
+ }
+ samples_all<-list_cbind(samples)
+ 
+ # joint densities  5.39s (reduced from 31.28s)
+ for(i in 1:8){
+  dens_samples_log[i,]<-colSum(matrix(unlist(dens_tilt_all_log(samples_all,par_m1,par_m2,par_m3,alpha_vec[i]*tiltflags[,i])),ncol=15))
+}
+ 
+  # MLE weights 
+ ui_matrix<-as.matrix(bdiag(list(c(-1,1),c(-1,1),c(-1,1),c(-1,1),c(-1,1),c(-1,1),c(-1,1))))
+ ci_vec<-rep(-1,14)
+ dens_samples<-exp(dens_samples_log)
+ g_dens<-t(dens_samples[2:8,]-rep(1,7)%*%t(dens_samples[1,]))
+ q_alpha<-c(beta_vec%*%dens_samples)
+ 
+ zeta_optim_results<-constrOptim(theta=rep(0,7),f=l_fun_neg,method="Nelder-Mead",ui=ui_matrix,ci=ci_vec,q_dens=dens_samples,g_dens=g_dens,alpha_vec=beta_vec) # 7.51s
+ zeta_optim<-zeta_optim_results$par
+ #zeta_optim<-solve(t(g_dens)%*%(g_dens/(q_alpha%*%t(rep(1,7)))))%*%(t(g_dens/(q_alpha%*%t(rep(1,7))))%*%rep(1,m))
+ 
+ q_alpha_zeta<-q_alpha+g_dens%*%zeta_optim
+
+ weights_sample_MLE<-dens_samples[1,]/q_alpha_zeta
+
+ # blackbox results  
+ Hydro<-samples_all[[1]]
+ Nuclear<-samples_all[[2]]
+ Temperature<-samples_all[[3]]
+ ElectricDemand<-samples_all[[4]]
+ GasDemand<-samples_all[[5]]
+ results<-BlackBox(GasDemand, ElectricDemand, Temperature, Hydro, Nuclear) # 0.23s (reduced from 5.35s)
+
+ return(list(results,c(weights_sample_MLE)))
+}
+
+# two-stage mixture proportions with several proposals
+estimation_twostages<-function(n,n0,gamma_vec,alpha_vec,tiltflags){
+ delta_lowbound_q1<-10^(-3)
+ samples_pilot<-list(0)
+ dens_samples_pilot_log<-matrix(0,8,n0)
+ n0_all<-c(n0-sum(floor(n0*gamma_vec[2:8])),floor(n0*gamma_vec[2:8]))
+ 
+ # pilot samples  
+ for(i in 1:8) samples_pilot[[i]]<-takesamples(1:(n0_all[i]),data_all[[i]])
+ samples_pilot_all<-list_cbind(samples_pilot)
+
+ # joint densities 
+ for(i in 1:8){
+   dens_samples_pilot_log[i,]<-colSum(matrix(unlist(dens_tilt_all_log(samples_pilot_all,par_m1,par_m2,par_m3,alpha_vec[i]*tiltflags[,i])),ncol=15))
+ }
+
+ dens_samples_pilot<-exp(dens_samples_pilot_log)
+ pi_dens_pilot<-dens_samples_pilot[1,]
+
+ ui_optim<-rbind(rep(-1,p-1),diag(rep(1,p-1)))
+ ci_optim<-c(-(1-delta_lowbound_q1),rep(0,7))
+ 
+ # blackbox results
+ Hydro_pilot<-samples_pilot_all[[1]]
+ Nuclear_pilot<-samples_pilot_all[[2]]
+ Temperature_pilot<-samples_pilot_all[[3]]
+ ElectricDemand_pilot<-samples_pilot_all[[4]]
+ GasDemand_pilot<-samples_pilot_all[[5]]
+ results_pilot<-BlackBox(GasDemand_pilot, ElectricDemand_pilot, Temperature_pilot, Hydro_pilot, Nuclear_pilot) 
+ h_integrand_pilot<-results_pilot[[1]] # Outage Cost
+
+ q_gamma_pilot<-t(gamma_vec)%*%dens_samples_pilot
+ temp_samples<-!((pi_dens_pilot==0)&(q_gamma_pilot==0))
+ g_dens_pilot<-dens_samples_pilot[2:8,]-rep(1,7)%*%t(dens_samples_pilot[1,])
+ mu_hat_pilot<-mean((h_integrand_pilot*pi_dens_pilot/q_gamma_pilot)[temp_samples])/mean((pi_dens_pilot/q_gamma_pilot)[temp_samples])
+
+ temp_beta<-constrOptim(theta=gamma_vec[2:8],f=var_MLE_value,grad=var_MLE_gradient,method="BFGS",ui=ui_optim,ci=ci_optim,pi_dens=pi_dens_pilot,q_dens=dens_samples_pilot,h=h_integrand_pilot,mu_hat=mu_hat_pilot,q_gamma=q_gamma_pilot,g_dens=g_dens_pilot,outer.iterations = 1000)
+ 
+ alpha_hat_excludefirst<-temp_beta$par
+ alpha_hat<-c(1-sum(alpha_hat_excludefirst),alpha_hat_excludefirst)
+
+ samples_formal<-list(0)
+ dens_samples_log<-matrix(0,8,n)
+ n1_all<-c(n-n0-sum(floor((n-n0)*alpha_hat[2:8])),floor((n-n0)*alpha_hat[2:8])); 
+ 
+ # formal samples  
+  for(i in 1:8){
+  if(n1_all[i]>0) samples_formal[[i]]<-takesamples((n0_all[i]+1):(n0_all[i]+n1_all[i]),data_all[[i]])
+  if(n1_all[i]==0) samples_formal[[i]]<-list(NULL,NULL,NULL,NULL,NULL)  
+ }
+ samples_formal_all<-list_cbind(samples_formal)
+ samples_all<-list_cbind(list(samples_pilot_all,samples_formal_all))
+
+ # joint densities 
+ for(i in 1:8){
+   dens_samples_log[i,]<-colSum(matrix(unlist(dens_tilt_all_log(samples_all,par_m1,par_m2,par_m3,alpha_vec[i]*tiltflags[,i])),ncol=15))
+ }
+ dens_samples<-exp(dens_samples_log)
+ g_dens<-t(dens_samples[2:8,]-rep(1,7)%*%t(dens_samples[1,])) 
+ alpha_tilde<-n0/n*gamma_vec[1]+(n-n0)/n*alpha_hat
+
+ # MLE weights 
+ ui_matrix<-as.matrix(bdiag(list(c(-1,1),c(-1,1),c(-1,1),c(-1,1),c(-1,1),c(-1,1),c(-1,1))))
+ ci_vec<-rep(-1,14)
+ zeta_optim_results<-constrOptim(theta=rep(0,7),f=l_fun_neg,method="Nelder-Mead",ui=ui_matrix,ci=ci_vec,q_dens=dens_samples,g_dens=g_dens,alpha_vec=alpha_tilde) 
+ zeta_optim<-zeta_optim_results$par
+  
+ q_alpha<-c(t(alpha_tilde)%*%dens_samples)
+ q_alpha_zeta<-q_alpha+g_dens%*%zeta_optim
+
+ weights_sample_MLE<-dens_samples[1,]/q_alpha_zeta
+ 
+ # blackbox results
+ Hydro<-samples_all[[1]]
+ Nuclear<-samples_all[[2]]
+ Temperature<-samples_all[[3]]
+ ElectricDemand<-samples_all[[4]]
+ GasDemand<-samples_all[[5]]
+ results<-BlackBox(GasDemand, ElectricDemand, Temperature, Hydro, Nuclear)
+
+ return(list(results,weights_sample_MLE,alpha_hat))
+}
+
+
+# parameters of target distribution
+par_m1<-rbind(c(5,500/5),c(100,0),c(54,5),c(1600,100),c(1600,100))
+par_m2<-rbind(c(6,600/6),c(100,0),c(52,5),c(1650,100),c(1700,100))
+par_m3<-rbind(c(7,600/7),c(100,0),c(55,5),c(1600,100),c(1600,100))
+
+# tilted parameters
+tiltflags<-matrix(c(0,0,0, 1,0,0, 0,1,0, 0,0,1, 1,1,0, 1,0,1, 0,1,1, 1,1,1), 3)
+mean_balance_all<-c(0,-216,-66,-416,-282,-632,-482,-698)
+alpha_vec<-rep(0,8)
+data_all<-list(0)
+
+ #calculate alpha
+for(i in 2:8){
+  alpha_vec[i]<-uniroot(oil_req_mean_diff,interval<-c(0,10),par_m1=par_m1,par_m2=par_m2,par_m3=par_m3,whichmonth=tiltflags[,i],mean_balance=mean_balance_all[i])$root
+}
+
+# simulate samples and weights
+replic<-1000; n=4000; n0=400;
+samples_det_all<-list(0)
+samples_MINV_all<-list(0)
+alpha_hat_all<-list(0)
+
+####################################
+# deterministic mixture weights
+####################################
+save.time<-proc.time() 
+for(k in 1:replic){ 
+ set.seed(200+k)
+ # take samples
+ data_all[[1]]<-sample_all(n,par_m1,par_m2,par_m3)
+ for(i in 2:8) data_all[[i]]<-sample_tilt_all(n,par_m1,par_m2,par_m3,alpha_vec[i]*tiltflags[,i]) 
+
+ alpha_paper<-c(0.5,0.5*c(0.007,0.056,0.001,0.472,0.036,0.127,0.301))
+ samples_det_results<-estimation_det(alpha_paper,n,alpha_vec,tiltflags)
+ samples_det_all[[k]]<-samples_det_results
+}
+proc.time()-save.time
+ 
+########################
+# MINV mixture weights
+########################
+save.time<-proc.time() 
+for(k in 1:replic){ 
+ set.seed(200+k)
+ # take samples
+ data_all[[1]]<-sample_all(n,par_m1,par_m2,par_m3)
+ for(i in 2:8) data_all[[i]]<-sample_tilt_all(n,par_m1,par_m2,par_m3,alpha_vec[i]*tiltflags[,i]) 
+
+ samples_MINV_results<-estimation_twostages(n,n0,1/rep(8,8),alpha_vec,tiltflags)
+ samples_MINV_all[[k]]<-samples_MINV_results
+}
+proc.time()-save.time
+
+
+# expectation results
+results_det<-matrix(0,replic,7); aa1<-0
+for(k in 1:replic){
+ OutageCost_det<-sum(samples_det_all[[k]][[1]][[1]]*samples_det_all[[k]][[2]])/sum(samples_det_all[[k]][[2]])
+ InventoryCost_det<-sum(samples_det_all[[k]][[1]][[2]]*samples_det_all[[k]][[2]])/sum(samples_det_all[[k]][[2]])
+ TotalCost_det<-sum(samples_det_all[[k]][[1]][[3]]*samples_det_all[[k]][[2]])/sum(samples_det_all[[k]][[2]])
+ OilInventory_det<-colSums(samples_det_all[[k]][[1]][[4]]*(samples_det_all[[k]][[2]]%*%t(rep(1,3))))/sum(samples_det_all[[k]][[2]])
+ ShortageInd_det<-mean(samples_det_all[[k]][[1]][[5]]*samples_det_all[[k]][[2]])
+ results_det[k,]<-c(OutageCost_det,InventoryCost_det,TotalCost_det,OilInventory_det,ShortageInd_det)
+} 
+colnames(results_det)<-list("OutageCost","InventoryCost","TotalCost","Invent1","Invent2","Invent3","ShortageProb")
+
+results_MINV<-matrix(0,replic,7)
+alpha_hat_MINV<-matrix(0,replic,8)
+alpha_hat_var<-0; gamma_vec_var<-0
+for(k in 1:replic){
+ OutageCost_MINV<-sum(samples_MINV_all[[k]][[1]][[1]]*samples_MINV_all[[k]][[2]])/sum(samples_MINV_all[[k]][[2]])
+ InventoryCost_MINV<-sum(samples_MINV_all[[k]][[1]][[2]]*samples_MINV_all[[k]][[2]])/sum(samples_MINV_all[[k]][[2]])
+ TotalCost_MINV<-sum(samples_MINV_all[[k]][[1]][[3]]*samples_MINV_all[[k]][[2]])/sum(samples_MINV_all[[k]][[2]])
+ OilInventory_MINV<-apply(samples_MINV_all[[k]][[1]][[4]]*(samples_MINV_all[[k]][[2]]%*%t(rep(1,3))),2,sum)/sum(samples_MINV_all[[k]][[2]])
+ ShortageInd_MINV<-sum(samples_MINV_all[[k]][[1]][[5]]*samples_MINV_all[[k]][[2]])/sum(samples_MINV_all[[k]][[2]])
+ results_MINV[k,]<-c(OutageCost_MINV,InventoryCost_MINV,TotalCost_MINV,OilInventory_MINV,ShortageInd_MINV)
+
+ alpha_hat_MINV[k,]<-samples_MINV_all[[k]][[3]]
+}
+colnames(results_MINV)<-list("OutageCost","InventoryCost","TotalCost","Invent1","Invent2","Invent3","ShortageProb")
+colnames(alpha_hat_MINV)<-list("Original(f)","Dec","Jan","Feb","Dec&Jan","Dec&Feb","Jan&Feb","Dec-Feb")
+
+results_det_all<-results_det
+results_MINV_all<-results_MINV
+alpha_hat_MINV_all<-alpha_hat_MINV
+
+results_mean<-rbind(apply(results_det_all,2,mean),apply(results_MINV_all,2,mean))
+rownames(results_mean)<-list("det","MINV")
+
+results_sd<-rbind(apply(results_det_all,2,sd),apply(results_MINV_all,2,sd))
+rownames(results_sd)<-list("det","MINV")
+
+results_mean
+results_sd^2
+
+
 #######################
 # VaR GARCH example
 ######################
