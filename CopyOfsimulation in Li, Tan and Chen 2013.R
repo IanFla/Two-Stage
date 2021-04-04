@@ -870,11 +870,8 @@ VaR_ARCH_stage1<-function(rhos,d_ahead,nt,y_hist,h_ini,a_pars,df_t,is_stage1){
    samples_1stage[n_comp_vec[,4],1:d_ahead]<-y_comp_pred(nt,NULL,samples_1stage_pars[n_comp_vec[,4],],H_T[n_comp_vec[,4]],d_ahead,NULL,T,2)
    comp_dens_tmp<-y_comp_pred(NULL,samples_1stage[norm_t_vec,d_ahead:1],samples_1stage_pars[norm_t_vec,],H_T[norm_t_vec],d_ahead,NULL,F,1:2)
    comp_dens[norm_t_vec,1:4]<-cbind(comp_dens_tmp,comp_dens_tmp)*cbind(samples_1stage_pars_normdens[norm_t_vec],samples_1stage_pars_normdens[norm_t_vec],samples_1stage_pars_tdens[norm_t_vec],samples_1stage_pars_tdens[norm_t_vec])
-   #?# comp_dens只和theta和Y_T+d的density有关吗
    target_dens[norm_t_vec]<-comp_dens_tmp[,1]*partial_targ_dens_1stage[norm_t_vec]*pars_targ_dens_1stage[norm_t_vec]
-   #?# target_dens只和theta，Y1:T和Y_T+d有关吗
    samples_weights_tmp<-4*target_dens[norm_t_vec]/(comp_dens[norm_t_vec,1:4]%*%rep(1,4))
-   #?# 但target没有多个Y1:T
    zero_ind<-(1:(4*nt))[!is.finite(samples_weights_tmp)]
    if(length(zero_ind)>0) samples_weights_tmp[zero_ind]<-0
    
