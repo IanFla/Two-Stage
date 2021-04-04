@@ -878,7 +878,7 @@ VaR_ARCH_stage1<-function(rhos,d_ahead,nt,y_hist,h_ini,a_pars,df_t,is_stage1){
    if(d_ahead>1) cum_logreturn<-c(samples_1stage[norm_t_vec,1:d_ahead]%*%rep(1,d_ahead))
    if(d_ahead==1) cum_logreturn<-samples_1stage[norm_t_vec,1]
    VaR_hat[1]<-VaR_ISest(cum_logreturn,rhos[1],samples_weights_tmp)
-   VaR_hat_adj[1]<-.8*VaR_hat[1]
+   VaR_hat_adj[1]<-.8*VaR_hat[1] #?# 为什么是0.8倍的
    samples_1stage[n_comp_vec[,5],1:d_ahead]<-y_comp_pred(nt,NULL,samples_1stage_pars[n_comp_vec[,5],],H_T[n_comp_vec[,5]],d_ahead,VaR_hat_adj[1],T,3)	 
    samples_1stage[n_comp_vec[,6],1:d_ahead]<-y_comp_pred(nt,NULL,samples_1stage_pars[n_comp_vec[,6],],H_T[n_comp_vec[,6]],d_ahead,VaR_hat_adj[1],T,4)
    comp_dens_tmp<-y_comp_pred(NULL,samples_1stage[truncnorm_vec[[1]],d_ahead:1],samples_1stage_pars[truncnorm_vec[[1]],],H_T[truncnorm_vec[[1]]],d_ahead,NULL,F,1:2)
@@ -902,7 +902,7 @@ VaR_ARCH_stage1<-function(rhos,d_ahead,nt,y_hist,h_ini,a_pars,df_t,is_stage1){
    comp_dens_tmp<-y_comp_pred(NULL,samples_1stage[,d_ahead:1],samples_1stage_pars,H_T,d_ahead,VaR_hat_adj[2],F,3:4)
    comp_dens[,7:8]<-comp_dens_tmp*cbind(samples_1stage_pars_normdens,samples_1stage_pars_normdens)
    
-   g_dens<-t(comp_dens[,-1]-comp_dens[,1]%*%t(rep(1,numb_comp-1)))   
+   g_dens<-t(comp_dens[,-1]-comp_dens[,1]%*%t(rep(1,numb_comp-1)))
    if(is_stage1==T){
      ui_optim<-rbind(rep(-1,numb_comp-1),diag(rep(1,numb_comp-1)))
      ci_optim<-c(-1,rep(0,numb_q1-1),rep(delta_lowbound_qt,numb_q1),rep(0,numb_q1*length(rhos)))
