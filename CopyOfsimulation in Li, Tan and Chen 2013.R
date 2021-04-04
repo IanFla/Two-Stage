@@ -51,13 +51,13 @@ targetdens<-function(x,y_hist,h_ini,logind,a_pars){ # a_pars is c(mu_a,sd_a) of 
    return(targ_dens)
 }
 log_neg_targetdens<-function(x,y_hist,h_ini,a_pars){
-   Time<-length(y_hist)-1
+   Time<-length(y_hist)-1 #?# 只有199个y作为history，1个作为y0
    d_ahead<-length(x)-3
    pars<-x[(d_ahead+1):(d_ahead+3)]
    if(!(prod(pars[2:3]>0)*(sum(pars[2:3])<1))) return(Inf)
    y2_hist<-y_hist^2
    if(d_ahead>0){
-     y_future<-x[d_ahead:1]
+     y_future<-x[d_ahead:1] #?# 用全joint分布，future不影响优化吗
      y2_future<-y_future^2
      Y<-c(y2_hist[-1],y2_future)
    }
@@ -67,7 +67,7 @@ log_neg_targetdens<-function(x,y_hist,h_ini,a_pars){
      if(i==1) H[1]<-exp(pars[1])+pars[2]*y_hist[1]^2+pars[3]*h_ini
 	 if(i>1) H[i]<-exp(pars[1])+pars[2]*Y[i-1]+pars[3]*H[i-1]
     }
-   priordens_a<-(pars[1]-a_pars[1])^2/(-2*a_pars[2]^2)
+   priordens_a<-(pars[1]-a_pars[1])^2/(-2*a_pars[2]^2) #?# 不是normalized
    targ_dens_log<-(-.5)*(t(Y/H+log(H))%*%rep(1,Time+d_ahead))+priordens_a
 browser()
    return(c(-targ_dens_log))   
@@ -771,7 +771,7 @@ MLE_mixture_p<-function(h_prop,g){
 }
 
 AdMit<-function(dimension,y_hist,h_ini,a_pars,n_t,df_t,max_step){ # The "Nelder-Mead" is costly, try to give the gradient function of AdMit_sample_weights and use "trust" or "BFGS", need modification
-   Time<-length(y_hist)-1; d_ahead<-0
+   Time<-length(y_hist)-1; d_ahead<-0                #?# max_step 好像没有用
    #inistate<-c(0,0.8,0.1);
 
    inistate<-c(0,0.184526,0.715474);
@@ -781,14 +781,14 @@ AdMit<-function(dimension,y_hist,h_ini,a_pars,n_t,df_t,max_step){ # The "Nelder-
    ui_matrix<-matrix(0,d_ahead+5,d_ahead+3)
    ui_matrix[d_ahead+1,(d_ahead+2):(d_ahead+3)]<-rep(-1,2);
    ui_matrix[(d_ahead+2):(d_ahead+3),(d_ahead+2)]<-c(-1,1);
-   ui_matrix[(d_ahead+4):(d_ahead+5),(d_ahead+3)]<-c(-1,1)
+   ui_matrix[(d_ahead+4):(d_ahead+5),(d_ahead+3)]<-c(-1,1) #?# 前几行行全是零有什么用
    ci_vec<-c(rep(-1,d_ahead),-1,rep(c(-1,0),2)) 
 	step1_results<-constrOptim(theta=inistate,f=log_neg_targetdens,method="Nelder-Mead",ui=ui_matrix,ci=ci_vec,y_hist=y_hist,h_ini=h_ini,a_pars=a_pars)
    mu_AdMit<-(step1_results$par)[d_ahead+1:3]
    Sigma_AdMit_results<-solve(numericHessian(log_neg_targetdens,t0=step1_results$par,y_hist=y_hist,h_ini=h_ini,a_pars=a_pars))
-   Sigma_AdMit<-Sigma_AdMit_results[d_ahead+1:3,d_ahead+1:3] 
+   Sigma_AdMit<-Sigma_AdMit_results[d_ahead+1:3,d_ahead+1:3]
    #Sigma_AdMit<-8*Sigma_AdMit
-   Sigma_AdMit[1,1]<-4*Sigma_AdMit[1,1] 
+   Sigma_AdMit[1,1]<-4*Sigma_AdMit[1,1] #?# 这里是用来加大方差的吗
    Sigma_AdMit[1,2:3]<-2*Sigma_AdMit[1,2:3]
    Sigma_AdMit[2:3,1]<-2*Sigma_AdMit[2:3,1] 
    return(list(mu_AdMit,Sigma_AdMit)) 
@@ -832,14 +832,14 @@ VaR_ARCH_stage1<-function(rhos,d_ahead,nt,y_hist,h_ini,a_pars,df_t,is_stage1){
    samples_1stage_pars_normdens<-dmvnorm(samples_1stage_pars,mu_comp,Sigma_comp)
    samples_1stage_pars_tdens<-dt((samples_1stage_pars[,1]-mu_comp[1])/sqrt(Sigma_comp[1,1]),df=df_t)*dt((samples_1stage_pars[,2]-mu_comp[2])/sqrt(Sigma_comp[2,2]),df=df_t)*dt((samples_1stage_pars[,3]-mu_comp[3])/sqrt(Sigma_comp[3,3]),df=df_t)/sqrt(Sigma_comp[1,1]*Sigma_comp[2,2]*Sigma_comp[3,3])   
    
-   pars_targ_dens_1stage<-exp((samples_1stage[,d_ahead+1]-a_pars[1])^2/(-2*a_pars[2]^2))   
+   pars_targ_dens_1stage<-exp((samples_1stage[,d_ahead+1]-a_pars[1])^2/(-2*a_pars[2]^2))
    
    # Calculate h_T and calculate h_1:T part of target dens 
    y2_hist<-y_hist^2
    nonzero_ind<-(1:n0)[as.logical(rowProds2(samples_1stage_pars[,2:3]>0)*(rowSums(samples_1stage_pars[,2:3])<1))]
    n0_nonzero<-length(nonzero_ind)
    alpha0<-exp(samples_1stage_pars[,1]); alpha1<-abs(samples_1stage_pars[,2]); beta_par<-abs(samples_1stage_pars[,3])
-   partial_targ_dens_log_tmp<-rep(0,n0)  
+   partial_targ_dens_log_tmp<-rep(0,n0) 
    for(i in 1:Time){     
      if(i==1) H_current<-alpha0+alpha1*y_hist[1]^2+beta_par*h_ini
 	 if(i>1) H_current<-alpha0+alpha1*Y_old+beta_par*H_old
@@ -848,8 +848,8 @@ VaR_ARCH_stage1<-function(rhos,d_ahead,nt,y_hist,h_ini,a_pars,df_t,is_stage1){
 	 H_old<-H_current
 	 Y_old<-Y_current
     }
-   H_T<-alpha0+alpha1*Y_old+beta_par*H_old
-   infin_ind<-(1:n0)[!is.finite(H_T)]
+   H_T<-alpha0+alpha1*Y_old+beta_par*H_old #?# 应该说H_T+1吧
+   infin_ind<-(1:n0)[!is.finite(H_T)] #?# 为什么会产生infinite
    if(length(infin_ind)>0) H_T[infin_ind]<-max(H_T[-infin_ind])
   
    partial_targ_dens_log_1stage<-rep(-Inf,n0)
@@ -870,8 +870,11 @@ VaR_ARCH_stage1<-function(rhos,d_ahead,nt,y_hist,h_ini,a_pars,df_t,is_stage1){
    samples_1stage[n_comp_vec[,4],1:d_ahead]<-y_comp_pred(nt,NULL,samples_1stage_pars[n_comp_vec[,4],],H_T[n_comp_vec[,4]],d_ahead,NULL,T,2)
    comp_dens_tmp<-y_comp_pred(NULL,samples_1stage[norm_t_vec,d_ahead:1],samples_1stage_pars[norm_t_vec,],H_T[norm_t_vec],d_ahead,NULL,F,1:2)
    comp_dens[norm_t_vec,1:4]<-cbind(comp_dens_tmp,comp_dens_tmp)*cbind(samples_1stage_pars_normdens[norm_t_vec],samples_1stage_pars_normdens[norm_t_vec],samples_1stage_pars_tdens[norm_t_vec],samples_1stage_pars_tdens[norm_t_vec])
-   target_dens[norm_t_vec]<-comp_dens_tmp[,1]*partial_targ_dens_1stage[norm_t_vec]*pars_targ_dens_1stage[norm_t_vec]   
+   #?# comp_dens只和theta和Y_T+d的density有关吗
+   target_dens[norm_t_vec]<-comp_dens_tmp[,1]*partial_targ_dens_1stage[norm_t_vec]*pars_targ_dens_1stage[norm_t_vec]
+   #?# target_dens只和theta，Y1:T和Y_T+d有关吗
    samples_weights_tmp<-4*target_dens[norm_t_vec]/(comp_dens[norm_t_vec,1:4]%*%rep(1,4))
+   #?# 但target没有多个Y1:T
    zero_ind<-(1:(4*nt))[!is.finite(samples_weights_tmp)]
    if(length(zero_ind)>0) samples_weights_tmp[zero_ind]<-0
    
