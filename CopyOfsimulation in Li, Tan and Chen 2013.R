@@ -476,10 +476,10 @@ partial_var_MLE_value<-function(theta_excludefirst,pi_dens,q_dens,h,mu_hat,q_gam
  q_alpha<-q_alpha[temp] 
  h<-h[temp]
  #
- cc1<-min(q_gamma)
+ cc1<-min(q_gamma) #?# 为什么cc1
  q_gamma_temp<-q_gamma
  q_gamma<-q_gamma/cc1
- cc2<-median(pi_dens)
+ cc2<-median(pi_dens) #?# 为什么cc2
  pi_dens_temp<-pi_dens
  pi_dens<-pi_dens/cc2
  #
@@ -906,9 +906,10 @@ VaR_ARCH_stage1<-function(rhos,d_ahead,nt,y_hist,h_ini,a_pars,df_t,is_stage1){
    if(is_stage1==T){
      ui_optim<-rbind(rep(-1,numb_comp-1),diag(rep(1,numb_comp-1)))
      ci_optim<-c(-1,rep(0,numb_q1-1),rep(delta_lowbound_qt,numb_q1),rep(0,numb_q1*length(rhos)))
+     #?# 只有两个需要大于等于0.001
      if(d_ahead>1) cum_logreturn<-c(samples_1stage[,1:d_ahead]%*%rep(1,d_ahead))
      if(d_ahead==1) cum_logreturn<-samples_1stage[,1]
-     for(i in 1:length(rhos)) h_all[,i]<-(cum_logreturn<=VaR_hat[i])*1
+     for(i in 1:length(rhos)) h_all[,i]<-(cum_logreturn<=VaR_hat[i])*1 #?# 这里不需要adjust
      gamma_vec<-rep(1,numb_comp)/numb_comp
      gamma_vec_excludefirst<-gamma_vec[-1]
      q_gamma<-comp_dens%*%gamma_vec
@@ -917,7 +918,7 @@ VaR_ARCH_stage1<-function(rhos,d_ahead,nt,y_hist,h_ini,a_pars,df_t,is_stage1){
 	theta_hat_results<-constrOptim(theta=gamma_vec_excludefirst,f=var_MLE,grad=var_MLE_gradient,method="BFGS",ui=ui_optim,ci=ci_optim,pi_dens=target_dens,q_dens=t(comp_dens),h_all=h_all,mu_hat_all=rhos,q_gamma=q_gamma,g_dens=g_dens,fnscale=var_scale,control=list(reltol=1e-05))
      theta_excludefirst<-theta_hat_results$par
      theta_hat<-c(1-sum(theta_excludefirst),theta_excludefirst)
-	 alpha_sd=0
+	 alpha_sd=0 #?# alpha_sd好像没用
    }
    if(is_stage1==F){
      theta_hat<-rep(1,numb_comp)/numb_comp
@@ -1074,14 +1075,14 @@ VaR_ARCH_onestage<-function(n,d_ahead,rhos,nt,y_hist,h_ini,a_pars,df_t){
    samples_stage2[,(d_ahead+1):(d_ahead+3)]<-samples_stage2_pars
    samples_stage2_pars_normdens<-dmvnorm(samples_stage2_pars,mu_comp,Sigma_comp)
    samples_stage2_pars_tdens<-dt((samples_stage2_pars[,1]-mu_comp[1])/sqrt(Sigma_comp[1,1]),df=df_t)*dt((samples_stage2_pars[,2]-mu_comp[2])/sqrt(Sigma_comp[2,2]),df=df_t)*dt((samples_stage2_pars[,3]-mu_comp[3])/sqrt(Sigma_comp[3,3]),df=df_t)/sqrt(Sigma_comp[1,1]*Sigma_comp[2,2]*Sigma_comp[3,3])
-   pars_targ_dens<-exp((samples_stage2[,d_ahead+1]-a_pars[1])^2/(-2*a_pars[2]^2))   
+   pars_targ_dens<-exp((samples_stage2[,d_ahead+1]-a_pars[1])^2/(-2*a_pars[2]^2))
 
    # Calculate h_T and calculate h_1:T part of target dens 
    y2_hist<-y_hist^2
    nonzero_ind<-(1:(n-n0))[as.logical(rowProds2(samples_stage2_pars[,2:3]>0)*(rowSums(samples_stage2_pars[,2:3])<1))]
    n_nonzero<-length(nonzero_ind)
    alpha0<-exp(samples_stage2_pars[,1]); alpha1<-abs(samples_stage2_pars[,2]); beta_par<-abs(samples_stage2_pars[,3])
-   partial_targ_dens_log_tmp<-rep(0,n-n0)  
+   partial_targ_dens_log_tmp<-rep(0,n-n0)
    for(i in 1:Time){     
      if(i==1) H_current<-alpha0+alpha1*y_hist[1]^2+beta_par*h_ini
 	 if(i>1) H_current<-alpha0+alpha1*Y_old+beta_par*H_old
@@ -1120,7 +1121,8 @@ VaR_ARCH_onestage<-function(n,d_ahead,rhos,nt,y_hist,h_ini,a_pars,df_t){
      q_theta_tilde_adj<-q_theta_tilde
      g_dens_adj<-g_dens
    }
-   zeta_MLE<-MLE_mixture_p(q_theta_tilde_adj,g_dens_adj) 
+   zeta_MLE<-MLE_mixture_p(q_theta_tilde_adj,g_dens_adj)
+   #?# 为什么zeta不依赖target却能提高精度
     
    # Calculate the samples weights
    target_dens_stage2<-sampling_results[[2]][,1]*partial_targ_dens*pars_targ_dens  
@@ -1140,6 +1142,7 @@ VaR_ARCH_onestage<-function(n,d_ahead,rhos,nt,y_hist,h_ini,a_pars,df_t){
    if(length(zero_ind)==0){
       for(i in 1:length(rhos)) VaR_hat[i]<-VaR_ISest(cum_logreturn,rhos[i],weights_sample_MLE)
       for(k in 1:3) pars_hat[k]<-sum(samples_all[,d_ahead+k]*weights_sample_MLE)/sum(weights_sample_MLE) 
+      #?# 对posterior pars mean进行estimation吗（自standarization）
    }
  #browser()  
    return(list(VaR_hat,theta_hat,pars_hat,zeta_MLE,mu_comp,Sigma_comp,VaR_hat_stage1))
