@@ -69,7 +69,6 @@ log_neg_targetdens<-function(x,y_hist,h_ini,a_pars){
     }
    priordens_a<-(pars[1]-a_pars[1])^2/(-2*a_pars[2]^2) #?# 不是normalized
    targ_dens_log<-(-.5)*(t(Y/H+log(H))%*%rep(1,Time+d_ahead))+priordens_a
-browser()
    return(c(-targ_dens_log))   
 }
 rnorm_trunc<-function(n,mu,std,truncat){ # sampling from truncated univariate normal
