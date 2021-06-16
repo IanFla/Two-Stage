@@ -7,8 +7,8 @@ import seaborn as sb
 import numdifftools as nd
 from wquantiles import quantile
 import statsmodels.api as sm
-import threading
 import multiprocessing
+import pickle
 
 from scipy.stats import norm,t,truncnorm
 from scipy.stats import multivariate_normal as mvnorm
@@ -325,30 +325,42 @@ class MLE:
             else:
                 self.disp('MLE fail')
 
-def experiment(pars):
-    np.random.seed(19971107)
-    mle=MLE(d=pars[0],alpha=pars[1],size=100000,show=False)
-    mle.disp('Reference for VaR{} (d={}): {}'.format(pars[1],pars[0],Truth[D==pars[0],Alpha==pars[1]]))
-    mle.disp('==IS==================================================IS==')
-    mle.estimate_IS()
-    mle.disp('==NIS================================================NIS==')
-    mle.resample(size=1000,ratio=100)
-    mle.estimate_NIS(rate=0.9)
-    mle.disp('==RIS================================================RIS==')
-    mle.estimate_RIS()
-    return mle.Cache
-
 D=np.array([1,2,5])
 Alpha=np.array([0.05,0.01])
 Truth=np.array([[-1.333,-1.895],[-1.886,-2.771],[-2.996,-4.424]])
 
-begin = dt.now()
-Cache=[]
-for d in D:
-    for alpha in Alpha:
-        Cache.append(experiment((d, alpha)))
-        print(d,alpha)
+def experiment(pars):
+    print('start {} {}'.format(pars[0], pars[1]))
+    np.random.seed(19971107)
+    mle=MLE(d=pars[0],alpha=pars[1],size=200000,show=False)
+    mle.disp('Reference for VaR{} (d={}): {}'.format(pars[1],pars[0],Truth[D==pars[0],Alpha==pars[1]]))
+    mle.disp('==IS==================================================IS==')
+    mle.estimate_IS()
+    mle.disp('==NIS================================================NIS==')
+    mle.resample(size=4000,ratio=300)
+    mle.estimate_NIS(rate=0.9)
+    mle.disp('==RIS================================================RIS==')
+    mle.estimate_RIS()
+    print('end {} {}'.format(pars[0], pars[1]))
+    return mle.Cache
 
-end = dt.now()
+def main():
+    begin = dt.now()
+    pool = multiprocessing.Pool()
+    inputs = []
+    for d in D:
+        for alpha in Alpha:
+            inputs.append((d, alpha))
 
-print((end-begin).seconds)
+    cores = multiprocessing.cpu_count()
+    print(cores)
+    Cache = pool.map(experiment, inputs)
+    end = dt.now()
+    print((end - begin).seconds)
+    return Cache
+
+if __name__ == '__main__':
+    result=main()
+    with open('Ian','wb') as file:
+        pickle.dump(result,file)
+        file.close()
