@@ -326,15 +326,15 @@ class MLE:
                 self.disp('MLE fail')
 
 def main():
-    mle = MLE(d=2, alpha=0.01, size=1000000, show=True)
+    mle = MLE(d=5, alpha=0.01, size=100000, show=True)
     mle.estimate_IS()
-    mle.resample(size=1000, ratio=1000)
+    mle.resample(size=1000, ratio=500)
 
-    data = pd.DataFrame(mle.rS, columns=['phi0', 'phi1', 'beta', 'y1', 'y2'])
+    data = pd.DataFrame(mle.rS, columns=['phi0', 'phi1', 'beta', 'y1', 'y2','y3', 'y4','y5'])
     data['tail'] = (mle.rS[:, 3:].sum(axis=1) <= mle.eVaR)
     # sb.pairplot(data, hue='tail')
     # plt.show()
-    data.to_csv('garch.csv')
+    data.to_csv('garch.csv',index=False)
 
 if __name__ == '__main__':
     main()

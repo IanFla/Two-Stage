@@ -1,0 +1,42 @@
+library(ggplot2)
+library(reshape2)
+
+graphics.off()
+rm(list=ls())
+cat('\f')
+
+garch<-read.csv("garch.csv")
+nc=ncol(garch)
+data<-scale(garch[1:nc-1])
+d<-dist(data,method="euclidean")^2
+fit1<-hclust(d,method="ward.D")
+
+tmp<-(length(fit1$height)-20):length(fit1$height)
+ggplot(mapping=aes(x=tmp,y=fit1$height[tmp]))+
+    geom_line()+
+    geom_point()+
+    labs(x="stage",y="height")
+
+par(mar=c(1,4,1,1))
+plot(fit1,sub="",xlab="",main="")
+
+num=4
+cluster<-cutree(fit1,k=num)
+centers<-aggregate(x=data,by=list(cluster=cluster),FUN=mean)
+
+fit2<-kmeans(x=data,centers=centers[-1],algorithm="MacQueen")
+
+tb<-fit2$centers
+tb<-data.frame(cbind(tb,cluster=1:num))
+tbm<-melt(tb,id.vars="cluster")
+tbm$cluster<-factor(tbm$cluster)
+ggplot(tbm,aes(x=variable,y=value,group=cluster,colour=cluster))+
+    geom_line(aes(linetype=cluster))+
+    geom_point(aes(shape=cluster))+
+    geom_hline(yintercept=0)+
+    labs(x=NULL,y="mean")
+
+aggregate(x=garch[1:nc-1],by=list(cluster=fit2$cluster),FUN=mean)
+table(garch$tail,fit2$cluster)
+
+
