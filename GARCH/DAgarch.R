@@ -7,7 +7,7 @@ cat('\f')
 
 garch<-read.csv("garch.csv")
 nc=ncol(garch)
-data<-scale(garch[1:nc-1])
+data<-scale(garch[garch$tail=='True',1:nc-1])
 d<-dist(data,method="euclidean")^2
 fit1<-hclust(d,method="ward.D")
 
@@ -20,7 +20,7 @@ ggplot(mapping=aes(x=tmp,y=fit1$height[tmp]))+
 par(mar=c(1,4,1,1))
 plot(fit1,sub="",xlab="",main="")
 
-num=4
+num=2
 cluster<-cutree(fit1,k=num)
 centers<-aggregate(x=data,by=list(cluster=cluster),FUN=mean)
 
@@ -36,7 +36,7 @@ ggplot(tbm,aes(x=variable,y=value,group=cluster,colour=cluster))+
     geom_hline(yintercept=0)+
     labs(x=NULL,y="mean")
 
-aggregate(x=garch[1:nc-1],by=list(cluster=fit2$cluster),FUN=mean)
-table(garch$tail,fit2$cluster)
+#aggregate(x=garch[1:nc-1],by=list(cluster=fit2$cluster),FUN=mean)
+#table(garch$tail,fit2$cluster)
 
 

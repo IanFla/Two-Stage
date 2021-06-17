@@ -23,6 +23,8 @@ from sklearn.linear_model import LinearRegression as Linear
 from sklearn.linear_model import Ridge
 from sklearn.linear_model import Lasso
 from sklearn.neighbors import KernelDensity as sklKDE
+from sklearn.cluster import KMeans
+from sklearn.preprocessing import StandardScaler
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -207,27 +209,58 @@ class MLE:
         self.rSset = S[list(set(self.choice))]
         self.disp('resampling rate: {}/{}'.format(self.rSset.shape[0], size))
 
-    def estimate_NIS(self, rate, bdwth='scott'):
+    def cluster(self, seed=0):
         rS1 = self.rS[self.__cumu(self.rS) <= self.eVaR]
         rS2 = self.rS[self.__cumu(self.rS) > self.eVaR]
-        self.kde1 = sciKDE(rS1.T, bw_method=bdwth)
-        self.kde2 = sciKDE(rS2.T, bw_method=bdwth)
-        cov1 = self.kde1.covariance_factor() * np.cov(rS1.T)
-        cov2 = self.kde2.covariance_factor() * np.cov(rS2.T)
-        num1 = len(set(self.choice[self.__cumu(self.rS) <= self.eVaR]))
-        num2 = len(set(self.choice[self.__cumu(self.rS) > self.eVaR]))
-        self.disp('KDE 1: {}/{}, bdwth: {} ({:.4f})' \
-                  .format(num1, rS1.shape[0], np.round(np.sqrt(np.diag(cov1)), 2), self.kde1.covariance_factor()))
-        self.disp('KDE 2: {}/{}, bdwth: {} ({:.4f})' \
-                  .format(num2, rS2.shape[0], np.round(np.sqrt(np.diag(cov2)), 2), self.kde2.covariance_factor()))
 
+        scaler1 = StandardScaler().fit(rS1)
+        scaler2 = StandardScaler().fit(rS2)
+        kmeans1 = KMeans(n_clusters=2, random_state=seed).fit(scaler1.transform(rS1))
+        kmeans2 = KMeans(n_clusters=2, random_state=seed).fit(scaler2.transform(rS2))
+        lb1 = kmeans1.labels_
+        lb2 = kmeans2.labels_
+        self.rSs = [rS1[lb1 == 1], rS1[lb1 == 0], rS2[lb2 == 1], rS2[lb2 == 0]]
+        num1 = len(set(self.choice[self.__cumu(self.rS) <= self.eVaR][lb1 == 1]))
+        num2 = len(set(self.choice[self.__cumu(self.rS) <= self.eVaR][lb1 == 0]))
+        num3 = len(set(self.choice[self.__cumu(self.rS) > self.eVaR][lb2 == 1]))
+        num4 = len(set(self.choice[self.__cumu(self.rS) > self.eVaR][lb2 == 0]))
+        self.disp('Clustering: {}/{}, {}/{}, {}/{}, {}/{}' \
+                  .format(num1, lb1.sum(), num2, (1 - lb1).sum(), num3, lb2.sum(), num4, (1 - lb2).sum()))
         tmp = np.copy(self.eVaR)
-        self.h = lambda x, loc: mvnorm.pdf(x=x, mean=loc, cov=cov1 if loc[3:].sum() <= tmp else cov2)
+        def group(s):
+            if s[3:].sum() <= tmp:
+                if kmeans1.predict(scaler1.transform([s]))[0] == 1:
+                    return 0
+                else:
+                    return 1
+            else:
+                if kmeans2.predict(scaler2.transform([s]))[0] == 1:
+                    return 2
+                else:
+                    return 3
+
+        self.group = group
+
+    def estimate_NIS(self, rate, bdwth='silverman'):
+        kdes = []
+        covs = []
+        for i, rS in enumerate(self.rSs):
+            kdes.append(sciKDE(rS.T, bw_method=bdwth))
+            covs.append(kdes[-1].covariance_factor() * np.cov(rS.T))
+            self.disp('KDE {}: {} ({:.4f})' \
+                      .format(i + 1, np.round(np.sqrt(np.diag(covs[-1])), 2), kdes[-1].covariance_factor()))
+
+        self.h = lambda x, loc: mvnorm.pdf(x=x, mean=loc, cov=covs[self.group(loc)])
         self.G = lambda x: np.array([self.h(x, loc) for loc in self.rSset[1:]]) - self.nP(x)
-        rate0 = rS1.shape[0] / (rS1.shape[0] + rS2.shape[0])
-        self.nP = lambda x: rate0 * self.kde1.pdf(x.T) + (1 - rate0) * self.kde2.pdf(x.T)
-        self.nS = lambda size: np.vstack([self.kde1.resample(round(rate0 * size)).T, \
-                                          self.kde2.resample(size - round(rate0 * size)).T])
+        rate0 = [rS.shape[0] / self.rS.shape[0] for rS in self.rSs]
+        self.nP = lambda x: np.sum([r0 * kde.pdf(x.T) for r0, kde in zip(rate0, kdes)], axis=0)
+
+        def nS(size):
+            sizes = np.round(size * np.array(rate0)).astype(np.int)
+            sizes[-1] = size - sizes[:-1].sum()
+            return np.vstack([kde.resample(sz).T for kde, sz in zip(kdes, sizes)])
+
+        self.nS = nS
 
         S = self.nS(self.size)
         W = self.__divi(self.T(S), self.nP(S))
@@ -330,14 +363,15 @@ Alpha=np.array([0.05,0.01])
 Truth=np.array([[-1.333,-1.895],[-1.886,-2.771],[-2.996,-4.424]])
 
 def experiment(pars):
-    print('start {} {}'.format(pars[0], pars[1]))
     np.random.seed(19971107)
+    print('start {} {}'.format(pars[0], pars[1]))
     mle=MLE(d=pars[0],alpha=pars[1],size=100000,show=False)
     mle.disp('Reference for VaR{} (d={}): {}'.format(pars[1],pars[0],Truth[D==pars[0],Alpha==pars[1]]))
     mle.disp('==IS==================================================IS==')
     mle.estimate_IS()
     mle.disp('==NIS================================================NIS==')
-    mle.resample(size=1000,ratio=500)
+    mle.resample(size=2000,ratio=1000)
+    mle.cluster()
     mle.estimate_NIS(rate=0.9)
     mle.disp('==RIS================================================RIS==')
     mle.estimate_RIS()
@@ -346,13 +380,11 @@ def experiment(pars):
 
 def main():
     begin = dt.now()
-    pool = multiprocessing.Pool()
-    inputs = []
+    Cache = []
     for d in D:
         for alpha in Alpha:
-            inputs.append((d, alpha))
+            Cache.append(experiment((d, alpha)))
 
-    Cache = pool.map(experiment, inputs)
     end = dt.now()
     print((end - begin).seconds)
     return Cache
