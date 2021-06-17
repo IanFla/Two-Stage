@@ -10,12 +10,12 @@ import statsmodels.api as sm
 import multiprocessing
 import pickle
 
-from scipy.stats import norm,t,truncnorm
+from scipy.stats import norm, t, truncnorm
 from scipy.stats import multivariate_normal as mvnorm
 from scipy.stats import multivariate_t as mvt
 from scipy.spatial import Delaunay as TRI
 from scipy.interpolate import LinearNDInterpolator as ITP
-from scipy.optimize import minimize,root
+from scipy.optimize import minimize, root
 from scipy.optimize import NonlinearConstraint as NonlinCons
 from scipy.stats import gaussian_kde as sciKDE
 
@@ -27,12 +27,14 @@ from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
 import warnings
+
 warnings.filterwarnings("ignore")
 
-data=DR('^GSPC','yahoo',dt(2010,9,29),dt(2011,7,14))
-returns=pd.DataFrame(100*np.diff(np.log(data['Adj Close'])),columns=['dlr'])
-returns.index=data.index.values[1:data.index.values.shape[0]]
-returns=np.array(returns['dlr'])
+data = DR('^GSPC', 'yahoo', dt(2010, 9, 29), dt(2011, 7, 14))
+returns = pd.DataFrame(100 * np.diff(np.log(data['Adj Close'])), columns=['dlr'])
+returns.index = data.index.values[1:data.index.values.shape[0]]
+returns = np.array(returns['dlr'])
+
 
 class GARCH:
     def __init__(self, returns):
@@ -141,8 +143,10 @@ class GARCH:
         tmp[good] = pdfp
         return tmp
 
-garch=GARCH(returns)
-garch.laplace(inflate=2,df=1)
+
+garch = GARCH(returns)
+garch.laplace(inflate=2, df=1)
+
 
 class MLE:
     def __init__(self, d, alpha, size, show=True):
@@ -158,7 +162,7 @@ class MLE:
         self.iP = lambda x: garch.proposal(x[:, :3], x[:, 3:])
         self.iS = lambda size: np.hstack(garch.predict(d, size))
         self.oP = lambda x, VaR: self.T(x) * np.abs(1.0 * (self.__cumu(x) < VaR) - self.alpha) / (
-                    2 * self.alpha * (1 - self.alpha))
+                2 * self.alpha * (1 - self.alpha))
         self.size = size
 
     def disp(self, text):
@@ -209,7 +213,7 @@ class MLE:
         self.rSset = S[list(set(self.choice))]
         self.disp('resampling rate: {}/{}'.format(self.rSset.shape[0], size))
 
-    def cluster(self, seed=0):
+    def cluster(self, seed=0, draw=False, write=False):
         rS1 = self.rS[self.__cumu(self.rS) <= self.eVaR]
         rS2 = self.rS[self.__cumu(self.rS) > self.eVaR]
 
@@ -227,6 +231,7 @@ class MLE:
         self.disp('Clustering: {}/{}, {}/{}, {}/{}, {}/{}' \
                   .format(num1, lb1.sum(), num2, (1 - lb1).sum(), num3, lb2.sum(), num4, (1 - lb2).sum()))
         tmp = np.copy(self.eVaR)
+
         def group(s):
             if s[3:].sum() <= tmp:
                 if kmeans1.predict(scaler1.transform([s]))[0] == 1:
@@ -240,6 +245,15 @@ class MLE:
                     return 3
 
         self.group = group
+        if draw:
+            data = pd.DataFrame(self.rS, columns=['phi0', 'phi1', 'beta'] \
+                                                 + ['y{}'.format(i + 1) for i in range(self.rS.shape[1] - 3)])
+            data['type'] = [self.group(s) for s in self.rS]
+            if write:
+                data.to_csv('garch.csv', index=False)
+
+            sb.pairplot(data, hue='type', palette={0: 'red', 1: 'blue', 2: 'green', 3: 'yellow'})
+            plt.show()
 
     def estimate_NIS(self, rate, bdwth='silverman'):
         kdes = []
@@ -358,21 +372,19 @@ class MLE:
             else:
                 self.disp('MLE fail')
 
-D=np.array([1,2,5])
-Alpha=np.array([0.05,0.01])
-Truth=np.array([[-1.333,-1.895],[-1.886,-2.771],[-2.996,-4.424]])
+
+D = np.array([1, 2, 5])
+Alpha = np.array([0.05, 0.01])
+Truth = np.array([[-1.333, -1.895], [-1.886, -2.771], [-2.996, -4.424]])
+
 
 def main():
     mle = MLE(d=2, alpha=0.01, size=100000, show=True)
     mle.estimate_IS()
     mle.resample(size=2000, ratio=1000)
-    mle.cluster()
+    mle.cluster(draw=True)
 
-    data = pd.DataFrame(mle.rS, columns=['phi0', 'phi1', 'beta', 'y1', 'y2'])
-    data['type'] = [mle.group(s) for s in mle.rS]
-    data.to_csv('garch.csv', index=False)
-    sb.pairplot(data, hue='type',palette={0:'red',1:'blue',2:'green',3:'yellow'})
-    plt.show()
 
 if __name__ == '__main__':
     main()
+
