@@ -151,6 +151,7 @@ garch.laplace(inflate=2, df=1)
 class MLE:
     def __init__(self, d, alpha, size, show=True):
         self.show = show
+        self.result = []
         if not self.show:
             self.Cache = []
 
@@ -161,8 +162,6 @@ class MLE:
         self.T = lambda x: garch.target(x[:, :3], x[:, 3:])
         self.iP = lambda x: garch.proposal(x[:, :3], x[:, 3:])
         self.iS = lambda size: np.hstack(garch.predict(d, size))
-        self.oP = lambda x, VaR: self.T(x) * np.abs(1.0 * (self.__cumu(x) < VaR) - self.alpha) / (
-                2 * self.alpha * (1 - self.alpha))
         self.size = size
 
     def disp(self, text):
@@ -181,6 +180,7 @@ class MLE:
     def __estimate(self, S, W, name, asym=True):
         x = self.__cumu(S)
         self.eVaR = quantile(x, W, self.alpha)
+        self.result.append(self.eVaR)
         if asym:
             w = W / np.sum(W)
             aVar = np.sum((w * (1.0 * (x <= self.eVaR) - self.alpha)) ** 2) * x.size
@@ -205,7 +205,9 @@ class MLE:
 
     def resampling(self, size, ratio):
         S = self.iS(ratio * size)
-        p = self.__divi(self.oP(S, self.eVaR), self.iP(S))
+        W = self.__divi(self.T(S), self.iP(S))
+        self.__estimate(S, W, 'IS({})'.format(ratio * size))
+        p = W * np.abs(1.0 * (self.__cumu(S) < self.eVaR) - self.alpha)
         index = np.arange(S.shape[0])
         self.choice = np.random.choice(index, size, p=p / np.sum(p), replace=True)
 
@@ -224,7 +226,6 @@ class MLE:
         else:
             rS1 = self.rS[self.__cumu(self.rS) <= self.eVaR]
             rS2 = self.rS[self.__cumu(self.rS) > self.eVaR]
-
             scaler1 = StandardScaler().fit(rS1)
             scaler2 = StandardScaler().fit(rS2)
             kmeans1 = KMeans(n_clusters=2, random_state=seed).fit(scaler1.transform(rS1))
@@ -276,9 +277,8 @@ class MLE:
         self.G = lambda x: np.array([self.h(x, loc) for loc in self.rSset[1:]]) - self.nP(x)
         rate0 = [rS.shape[0] / self.rS.shape[0] for rS in self.rSs]
         self.nP = lambda x: np.sum([r0 * kde.pdf(x.T) for r0, kde in zip(rate0, kdes)], axis=0)
-
         def nS(size):
-            sizes = np.round(size * np.array(rate0)).astype(np.int)
+            sizes = np.round(size * np.array(rate0)).astype(np.int64)
             sizes[-1] = size - sizes[:-1].sum()
             return np.vstack([kde.resample(sz).T for kde, sz in zip(kdes, sizes)])
 
@@ -290,22 +290,23 @@ class MLE:
 
         self.mP = lambda x: (1 - rate) * self.iP(x) + rate * self.nP(x)
         self.mS = lambda size: np.vstack([self.iS(size - round(rate * size)), self.nS(round(rate * size))])
-        self.S = self.mS(self.size)
-        W = self.__divi(self.T(self.S), self.mP(self.S))
-        self.__estimate(self.S, W, 'MIS')
+        self.S_ = self.mS(self.size)
+        self.T_ = self.T(self.S_)
+        self.mP_ = self.mP(self.S_)
+        W = self.__divi(self.T_, self.mP_)
+        self.__estimate(self.S_, W, 'MIS')
+        self.G_ = self.G(self.S_)
 
     def estimate_RIS(self):
-        T = self.T(self.S)
-        mP = self.mP(self.S)
-        X = (self.__divi(self.G(self.S), mP)).T
+        X = (self.__divi(self.G_, self.mP_)).T
         tmp = X / np.linalg.norm(X, axis=0)
         lbd = np.linalg.eigvals(tmp.T.dot(tmp))
         tau = np.sqrt(lbd.max() / lbd)
         self.disp('Condition index: (min {:.4f}, median {:.4f}, mean {:.4f}, max {:.4f}, [>30] {}/{})' \
                   .format(tau.min(), np.median(tau), tau.mean(), tau.max(), np.sum(tau > 30), tau.size))
 
-        y2 = self.__divi(T, mP)
-        y1 = y2 * (self.__cumu(self.S) <= self.eVaR)
+        y2 = self.__divi(self.T_, self.mP_)
+        y1 = y2 * (self.__cumu(self.S_) <= self.eVaR)
         y3 = y1 - self.alpha * y2
         self.reg1 = Linear().fit(X, y1)
         self.reg2 = Linear().fit(X, y2)
@@ -319,19 +320,18 @@ class MLE:
         self.disp('RIS a-var: {:.6f}'.format(aVar))
 
         XX = X - X.mean(axis=0)
-        zeta1 = np.linalg.solve(XX.T.dot(XX), X.sum(axis=0))
-        W = self.__divi(self.T(self.S), mP) * (1 - XX.dot(zeta1))
+        self.zeta1 = np.linalg.solve(XX.T.dot(XX), X.sum(axis=0))
+        W = self.__divi(self.T_, self.mP_) * (1 - XX.dot(self.zeta1))
         self.disp('reg weights: (min {:.4f}, mean {:.4f}, max {:.4f}, [<0] {}/{})' \
                   .format(W.min(), W.mean(), W.max(), np.sum(W < 0), W.size))
-        self.__estimate(self.S, W, 'RIS', asym=False)
+        self.__estimate(self.S_, W, 'RIS', asym=False)
 
     def estimate_MLE(self, opt=True, NR=True):
-        mP = self.mP(self.S)
-        G = self.G(self.S)
-        target = lambda zeta: -np.mean(np.log(mP + zeta.dot(G)))
-        gradient = lambda zeta: -np.mean(self.__divi(G, mP + zeta.dot(G)), axis=1)
-        hessian = lambda zeta: self.__divi(G, (mP + zeta.dot(G)) ** 2).dot(G.T) / G.shape[1]
-        zeta0 = np.zeros(G.shape[0])
+        target = lambda zeta: -np.mean(np.log(self.mP_ + zeta.dot(self.G_)))
+        gradient = lambda zeta: -np.mean(self.__divi(self.G_, self.mP_ + zeta.dot(self.G_)), axis=1)
+        hessian = lambda zeta: self.__divi(self.G_, (self.mP_ + zeta.dot(self.G_)) ** 2)\
+                                   .dot(self.G_.T) / self.G_.shape[1]
+        zeta0 = np.zeros(self.G_.shape[0])
         grad0 = gradient(zeta0)
         self.disp('MLE reference:')
         self.disp('origin: value: {:.4f}; grad: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f})' \
@@ -339,26 +339,25 @@ class MLE:
 
         print()
         self.disp('Theoretical results:')
-        X = self.__divi(G, mP).T
-        XX = X - X.mean(axis=0)
-        zeta1 = np.linalg.solve(XX.T.dot(XX), X.sum(axis=0))
         self.disp('MLE(The) zeta: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f}, norm {:.4f})' \
-                  .format(zeta1.min(), zeta1.mean(), zeta1.max(), zeta1.std(), np.sqrt(np.sum(zeta1 ** 2))))
-        grad1 = gradient(zeta1)
+                  .format(self.zeta1.min(), self.zeta1.mean(), self.zeta1.max(), \
+                          self.zeta1.std(), np.sqrt(np.sum(self.zeta1 ** 2))))
+        grad1 = gradient(self.zeta1)
         self.disp('theory: value: {:.4f}; grad: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f})' \
-                  .format(target(zeta1), grad1.min(), grad1.mean(), grad1.max(), grad1.std()))
-        W = self.__divi(self.T(self.S), mP + zeta1.dot(G))
+                  .format(target(self.zeta1), grad1.min(), grad1.mean(), grad1.max(), grad1.std()))
+        W = self.__divi(self.T_, self.mP_ + self.zeta1.dot(self.G_))
         self.disp('mle weights (The): (min {:.4f}, mean {:.4f}, max {:.4f}, [<0] {}/{})' \
                   .format(W.min(), W.mean(), W.max(), np.sum(W < 0), W.size))
-        self.__estimate(self.S, W, 'MLE(The)', asym=False)
+        self.__estimate(self.S_, W, 'MLE(The)', asym=False)
 
         if opt:
-            zeta = zeta1 if target(zeta1) != np.nan else zeta0
+            zeta = zeta0 if np.isnan(target(self.zeta1)) else self.zeta1
             begin = dt.now()
             if NR:
                 res = root(lambda zeta: (gradient(zeta), hessian(zeta)), zeta, method='lm', jac=True)
             else:
-                cons = ({'type': 'ineq', 'fun': lambda zeta: mP + zeta.dot(G), 'jac': lambda zeta: G.T})
+                cons = ({'type': 'ineq', 'fun': lambda zeta: self.mP_ + zeta.dot(self.G_), \
+                         'jac': lambda zeta: self.G_.T})
                 res = minimize(target, zeta, method='SLSQP', jac=gradient, constraints=cons, \
                                options={'ftol': 1e-8, 'maxiter': 1000})
 
@@ -369,14 +368,14 @@ class MLE:
                 zeta = res['x']
                 self.disp('MLE(Opt) zeta: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f}, norm {:.4f})' \
                           .format(zeta.min(), zeta.mean(), zeta.max(), zeta.std(), np.sqrt(np.sum(zeta ** 2))))
-                self.disp('Dist(zeta(Opt),zeta(The))={:.4f}'.format(np.sqrt(np.sum((zeta - zeta1) ** 2))))
+                self.disp('Dist(zeta(Opt),zeta(The))={:.4f}'.format(np.sqrt(np.sum((zeta - self.zeta1) ** 2))))
                 grad = gradient(zeta)
                 self.disp('optimal: value: {:.4f}; grad: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f})' \
                           .format(target(zeta), grad.min(), grad.mean(), grad.max(), grad.std()))
-                W = self.__divi(self.T(self.S), mP + zeta.dot(G))
+                W = self.__divi(self.T_, self.mP_ + zeta.dot(self.G_))
                 self.disp('mle weights (Opt): (min {:.4f}, mean {:.4f}, max {:.4f}, [<0] {}/{})' \
                           .format(W.min(), W.mean(), W.max(), np.sum(W < 0), W.size))
-                self.__estimate(self.S, W, 'MLE(Opt)', asym=False)
+                self.__estimate(self.S_, W, 'MLE(Opt)', asym=False)
             else:
                 self.disp('MLE fail')
 
@@ -388,20 +387,21 @@ Truth = np.array([[-1.333, -1.895], [-1.886, -2.771], [-2.996, -4.424]])
 
 def experiment(pars):
     np.random.seed(19971107)
-    print('start {} {}'.format(pars[0], pars[1]))
-    mle = MLE(d=pars[0], alpha=pars[1], size=100000, show=False)
+    print('Start {} {}'.format(pars[0], pars[1]))
+    mle = MLE(d=pars[0], alpha=pars[1], size=100000, show=True)
     mle.disp('Reference for VaR{} (d={}): {}'.format(pars[1], pars[0], Truth[D == pars[0], Alpha == pars[1]]))
     mle.disp('==IS==================================================IS==')
     mle.estimate_IS()
-    mle.disp('==NIS================================================NIS==')
     mle.resampling(size=2000, ratio=1000)
-    mle.clustering(auto=False, num=4, draw=False, write=False)
+    mle.disp('==NIS================================================NIS==')
+    mle.clustering(auto=False, num=4, draw=True, write=False)
     mle.estimate_NIS(rate=0.9)
     mle.disp('==RIS================================================RIS==')
     mle.estimate_RIS()
-    mle.estimate_MLE()
-    print('end {} {}'.format(pars[0], pars[1]))
-    return mle.Cache
+    # mle.disp('==MLE================================================MLE==')
+    # mle.estimate_MLE()
+    print('End {} {}'.format(pars[0], pars[1]))
+    # return mle.Cache
 
 
 def main():
@@ -410,15 +410,16 @@ def main():
     # for d in D:
     #     for alpha in Alpha:
     #         Cache.append(experiment((d, alpha)))
-    Cache = experiment((2,0.05))
+    experiment((2,0.05))
     end = dt.now()
     print((end - begin).seconds)
-    return Cache
+    # return Cache
 
 
 if __name__ == '__main__':
-    result = main()
-    with open('Ian', 'wb') as file:
-        pickle.dump(result, file)
-        file.close()
+    main()
+    # result = main()
+    # with open('Ian', 'wb') as file:
+    #     pickle.dump(result, file)
+    #     file.close()
 
