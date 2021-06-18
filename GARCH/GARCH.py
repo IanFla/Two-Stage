@@ -203,7 +203,7 @@ class MLE:
         W = self.__divi(self.T(S), self.iP(S))
         self.__estimate(S, W, 'IS')
 
-    def resample(self, size, ratio):
+    def resampling(self, size, ratio):
         S = self.iS(ratio * size)
         p = self.__divi(self.oP(S, self.eVaR), self.iP(S))
         index = np.arange(S.shape[0])
@@ -213,38 +213,46 @@ class MLE:
         self.rSset = S[list(set(self.choice))]
         self.disp('resampling rate: {}/{}'.format(self.rSset.shape[0], size))
 
-    def cluster(self, seed=0, draw=False, write=False):
-        rS1 = self.rS[self.__cumu(self.rS) <= self.eVaR]
-        rS2 = self.rS[self.__cumu(self.rS) > self.eVaR]
+    def clustering(self, seed=0, auto=False, num=4, draw=False, write=False):
+        if auto:
+            scaler = StandardScaler().fit(self.rS)
+            kmeans = KMeans(n_clusters=num, random_state=seed).fit(scaler.transform(self.rS))
+            self.rSs = [self.rS[kmeans.labels_ == i] for i in range(num)]
+            nums = [len(set(self.choice[kmeans.labels_ == i])) for i in range(num)]
+            self.disp('Clustering: {}/{}'.format(nums, [rS.shape[0] for rS in self.rSs]))
+            self.group = lambda s: kmeans.predict(scaler.transform([s]))[0]
+        else:
+            rS1 = self.rS[self.__cumu(self.rS) <= self.eVaR]
+            rS2 = self.rS[self.__cumu(self.rS) > self.eVaR]
 
-        scaler1 = StandardScaler().fit(rS1)
-        scaler2 = StandardScaler().fit(rS2)
-        kmeans1 = KMeans(n_clusters=2, random_state=seed).fit(scaler1.transform(rS1))
-        kmeans2 = KMeans(n_clusters=2, random_state=seed).fit(scaler2.transform(rS2))
-        lb1 = kmeans1.labels_
-        lb2 = kmeans2.labels_
-        self.rSs = [rS1[lb1 == 1], rS1[lb1 == 0], rS2[lb2 == 1], rS2[lb2 == 0]]
-        num1 = len(set(self.choice[self.__cumu(self.rS) <= self.eVaR][lb1 == 1]))
-        num2 = len(set(self.choice[self.__cumu(self.rS) <= self.eVaR][lb1 == 0]))
-        num3 = len(set(self.choice[self.__cumu(self.rS) > self.eVaR][lb2 == 1]))
-        num4 = len(set(self.choice[self.__cumu(self.rS) > self.eVaR][lb2 == 0]))
-        self.disp('Clustering: {}/{}, {}/{}, {}/{}, {}/{}' \
-                  .format(num1, lb1.sum(), num2, (1 - lb1).sum(), num3, lb2.sum(), num4, (1 - lb2).sum()))
-        tmp = np.copy(self.eVaR)
-
-        def group(s):
-            if s[3:].sum() <= tmp:
-                if kmeans1.predict(scaler1.transform([s]))[0] == 1:
-                    return 0
+            scaler1 = StandardScaler().fit(rS1)
+            scaler2 = StandardScaler().fit(rS2)
+            kmeans1 = KMeans(n_clusters=2, random_state=seed).fit(scaler1.transform(rS1))
+            kmeans2 = KMeans(n_clusters=2, random_state=seed).fit(scaler2.transform(rS2))
+            lb1 = kmeans1.labels_
+            lb2 = kmeans2.labels_
+            self.rSs = [rS1[lb1 == 1], rS1[lb1 == 0], rS2[lb2 == 1], rS2[lb2 == 0]]
+            num1 = len(set(self.choice[self.__cumu(self.rS) <= self.eVaR][lb1 == 1]))
+            num2 = len(set(self.choice[self.__cumu(self.rS) <= self.eVaR][lb1 == 0]))
+            num3 = len(set(self.choice[self.__cumu(self.rS) > self.eVaR][lb2 == 1]))
+            num4 = len(set(self.choice[self.__cumu(self.rS) > self.eVaR][lb2 == 0]))
+            self.disp('Clustering: {}/{}, {}/{}, {}/{}, {}/{}' \
+                      .format(num1, lb1.sum(), num2, (1 - lb1).sum(), num3, lb2.sum(), num4, (1 - lb2).sum()))
+            tmp = np.copy(self.eVaR)
+            def group(s):
+                if s[3:].sum() <= tmp:
+                    if kmeans1.predict(scaler1.transform([s]))[0] == 1:
+                        return 0
+                    else:
+                        return 1
                 else:
-                    return 1
-            else:
-                if kmeans2.predict(scaler2.transform([s]))[0] == 1:
-                    return 2
-                else:
-                    return 3
+                    if kmeans2.predict(scaler2.transform([s]))[0] == 1:
+                        return 2
+                    else:
+                        return 3
 
-        self.group = group
+            self.group = group
+
         if draw:
             data = pd.DataFrame(self.rS, columns=['phi0', 'phi1', 'beta'] \
                                                  + ['y{}'.format(i + 1) for i in range(self.rS.shape[1] - 3)])
@@ -252,7 +260,7 @@ class MLE:
             if write:
                 data.to_csv('garch.csv', index=False)
 
-            sb.pairplot(data, hue='type', palette={0: 'red', 1: 'blue', 2: 'green', 3: 'yellow'})
+            sb.pairplot(data, hue='type')
             plt.show()
 
     def estimate_NIS(self, rate, bdwth='silverman'):
@@ -386,22 +394,23 @@ def experiment(pars):
     mle.disp('==IS==================================================IS==')
     mle.estimate_IS()
     mle.disp('==NIS================================================NIS==')
-    mle.resample(size=2000, ratio=1000)
-    mle.cluster()
+    mle.resampling(size=2000, ratio=1000)
+    mle.clustering(auto=False, num=4, draw=False, write=False)
     mle.estimate_NIS(rate=0.9)
     mle.disp('==RIS================================================RIS==')
     mle.estimate_RIS()
+    mle.estimate_MLE()
     print('end {} {}'.format(pars[0], pars[1]))
     return mle.Cache
 
 
 def main():
     begin = dt.now()
-    Cache = []
-    for d in D:
-        for alpha in Alpha:
-            Cache.append(experiment((d, alpha)))
-
+    # Cache = []
+    # for d in D:
+    #     for alpha in Alpha:
+    #         Cache.append(experiment((d, alpha)))
+    Cache = experiment((2,0.05))
     end = dt.now()
     print((end - begin).seconds)
     return Cache
