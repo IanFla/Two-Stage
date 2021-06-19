@@ -180,9 +180,7 @@ class MLE:
     def __init__(self, d, alpha, size, show=True):
         self.show = show
         self.result = []
-        if not self.show:
-            self.Cache = []
-
+        self.Cache = []
         self.alpha = alpha
         aVar = np.array([alpha * (1 - alpha), 4 * (alpha * (1 - alpha)) ** 2])
         self.disp('Reference for a-var (prob) [direct, optimal]: {}'.format(np.round(aVar, 6)))
@@ -234,7 +232,9 @@ class MLE:
     def resampling(self, size, ratio):
         S = self.iS(ratio * size)
         W = self.__divi(self.T(S), self.iP(S))
-        self.__estimate(S, W, 'IS({})'.format(ratio * size))
+        if ratio * size > self.size:
+            self.__estimate(S, W, 'IS({})'.format(ratio * size))
+
         p = W * np.abs(1.0 * (self.__cumu(S) <= self.eVaR) - self.alpha)
         index = np.arange(S.shape[0])
         self.choice = np.random.choice(index, size, p=p / np.sum(p), replace=True)
@@ -292,11 +292,12 @@ class MLE:
             sb.pairplot(data, hue='type')
             plt.show()
 
-    def estimate_NIS(self, rate, bw=1, a=0):
+    def estimate_NIS(self, rate, bw=1, adapt=True):
         kdes = []
         covs = []
         tmp = np.copy(self.eVaR)
         F = lambda x: self.T(x) * np.abs(1.0 * (self.__cumu(x) <= tmp) - self.alpha)
+        a = 1 / self.rS.shape[1] if adapt else 0
         for i, rS in enumerate(self.rSs):
             kdes.append(AKDE(rS,bw=bw,F=F(rS),a=a))
             covs.append(kdes[-1].f * kdes[-1].cov)
@@ -421,23 +422,22 @@ Truth = np.array([[-1.333, -1.895], [-1.886, -2.771], [-2.996, -4.424]])
 
 
 def experiment(pars):
-    np.random.seed(19971107)
     print('Start {} {}'.format(pars[0], pars[1]))
-    mle = MLE(d=pars[0], alpha=pars[1], size=100000, show=False)
+    mle = MLE(d=pars[0], alpha=pars[1], size=100000, show=True)
     mle.disp('Reference for VaR{} (d={}): {}'.format(pars[1], pars[0], Truth[D == pars[0], Alpha == pars[1]]))
     mle.disp('==IS==================================================IS==')
     mle.estimate_IS()
-    mle.resampling(size=2000, ratio=1000)
+    mle.resampling(size=1500, ratio=1000)
     mle.disp('==NIS================================================NIS==')
     mle.clustering(auto=False, num=4, draw=False, write=False)
-    mle.estimate_NIS(rate=0.9,bw=1,a=1/(3+pars[0]))
+    mle.estimate_NIS(rate=0.9,bw=1,adapt=True)
     mle.disp('==RIS================================================RIS==')
     mle.estimate_RIS()
     print('End {} {}'.format(pars[0], pars[1]))
     return mle.Cache
 
 
-def main():
+def main(save=False,ret=False):
     begin = dt.now()
     Cache = []
     for d in D:
@@ -446,13 +446,15 @@ def main():
 
     end = dt.now()
     print((end - begin).seconds)
-    return Cache
+    if save:
+        with open('Ian', 'wb') as file:
+            pickle.dump(Cache, file)
+            file.close()
+
+    if ret:
+        return Cache
 
 
 if __name__ == '__main__':
-    result=main()
-    # result = main()
-    # with open('Ian', 'wb') as file:
-    #     pickle.dump(result, file)
-    #     file.close()
+    main(save=False,ret=False)
 
