@@ -10,7 +10,7 @@ import statsmodels.api as sm
 import multiprocessing
 import pickle
 
-from scipy.stats import norm, t, truncnorm
+from scipy.stats import norm, t, truncnorm, multinomial
 from scipy.stats import multivariate_normal as mvnorm
 from scipy.stats import multivariate_t as mvt
 from scipy.spatial import Delaunay as TRI
@@ -18,6 +18,7 @@ from scipy.interpolate import LinearNDInterpolator as ITP
 from scipy.optimize import minimize, root
 from scipy.optimize import NonlinearConstraint as NonlinCons
 from scipy.stats import gaussian_kde as sciKDE
+from scipy.stats import gmean
 
 from sklearn.linear_model import LinearRegression as Linear
 from sklearn.linear_model import Ridge
@@ -148,6 +149,33 @@ garch = GARCH(returns)
 garch.laplace(inflate=2, df=1)
 
 
+class AKDE:
+    def __init__(self, rS, bw, F, a):
+        self.rS = rS
+        self.K = rS.shape[0]
+        self.f = bw * sciKDE(rS.T, bw_method='silverman').factor
+        self.cov = np.cov(rS.T)
+        self.gm = gmean(F)
+        self.H2 = (F / self.gm) ** (-2 * a)
+
+    def pdf(self, S):
+        res = np.zeros(S.shape[0])
+        for i, loc in enumerate(self.rS):
+            res += mvnorm.pdf(x=S, mean=loc, cov=self.f * self.H2[i] * self.cov)
+
+        return res / self.K
+
+    def rvs(self, size):
+        res = np.zeros([size, self.rS.shape[1]])
+        sizes = multinomial.rvs(n=size, p=np.ones(self.K) / self.K)
+        cumsizes = np.append(0, np.cumsum(sizes))
+        for i, loc in enumerate(self.rS):
+            res[cumsizes[i]:cumsizes[i + 1], :] = mvnorm.rvs(size=sizes[i], mean=loc,
+                                                             cov=self.f * self.H2[i] * self.cov)
+
+        return res
+
+
 class MLE:
     def __init__(self, d, alpha, size, show=True):
         self.show = show
@@ -207,7 +235,7 @@ class MLE:
         S = self.iS(ratio * size)
         W = self.__divi(self.T(S), self.iP(S))
         self.__estimate(S, W, 'IS({})'.format(ratio * size))
-        p = W * np.abs(1.0 * (self.__cumu(S) < self.eVaR) - self.alpha)
+        p = W * np.abs(1.0 * (self.__cumu(S) <= self.eVaR) - self.alpha)
         index = np.arange(S.shape[0])
         self.choice = np.random.choice(index, size, p=p / np.sum(p), replace=True)
 
@@ -264,25 +292,33 @@ class MLE:
             sb.pairplot(data, hue='type')
             plt.show()
 
-    def estimate_NIS(self, rate, bdwth='silverman'):
+    def estimate_NIS(self, rate, bw=1, a=1):
         kdes = []
         covs = []
+        tmp = np.copy(self.eVaR)
+        # F = lambda x: self.T(x) * np.abs(1.0 * (self.__cumu(x) <= tmp) - self.alpha)
+        F = lambda x: np.ones(x.shape[0])
         for i, rS in enumerate(self.rSs):
-            kdes.append(sciKDE(rS.T, bw_method=bdwth))
-            covs.append(kdes[-1].covariance_factor() * np.cov(rS.T))
+            kdes.append(AKDE(rS,bw=bw,F=F(rS),a=a))
+            covs.append(kdes[-1].f * kdes[-1].cov)
             self.disp('KDE {}: {} ({:.4f})' \
-                      .format(i + 1, np.round(np.sqrt(np.diag(covs[-1])), 2), kdes[-1].covariance_factor()))
+                      .format(i + 1, np.round(np.sqrt(np.diag(covs[-1])), 2), kdes[-1].f))
 
-        self.h = lambda x, loc: mvnorm.pdf(x=x, mean=loc, cov=covs[self.group(loc)])
-        self.G = lambda x: np.array([self.h(x, loc) for loc in self.rSset[1:]]) - self.nP(x)
         rate0 = [rS.shape[0] / self.rS.shape[0] for rS in self.rSs]
-        self.nP = lambda x: np.sum([r0 * kde.pdf(x.T) for r0, kde in zip(rate0, kdes)], axis=0)
+        self.nP = lambda x: np.sum([r0 * kde.pdf(x) for r0, kde in zip(rate0, kdes)], axis=0)
         def nS(size):
             sizes = np.round(size * np.array(rate0)).astype(np.int64)
             sizes[-1] = size - sizes[:-1].sum()
-            return np.vstack([kde.resample(sz).T for kde, sz in zip(kdes, sizes)])
+            return np.vstack([kde.rvs(sz) for kde, sz in zip(kdes, sizes)])
 
         self.nS = nS
+        def h(x,loc):
+            f = F(np.array([loc]))[0]
+            kde = kdes[self.group(loc)]
+            cov = (f/kde.gm) ** (-2 * a) * covs[self.group(loc)]
+            return mvnorm.pdf(x=x, mean=loc, cov=cov)
+
+        self.G = lambda x: np.array([h(x, loc) for loc in self.rSset[1:]]) - self.nP(x)
 
         S = self.nS(self.size)
         W = self.__divi(self.T(S), self.nP(S))
