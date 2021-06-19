@@ -292,12 +292,11 @@ class MLE:
             sb.pairplot(data, hue='type')
             plt.show()
 
-    def estimate_NIS(self, rate, bw=1, a=1):
+    def estimate_NIS(self, rate, bw=1, a=0):
         kdes = []
         covs = []
         tmp = np.copy(self.eVaR)
-        # F = lambda x: self.T(x) * np.abs(1.0 * (self.__cumu(x) <= tmp) - self.alpha)
-        F = lambda x: np.ones(x.shape[0])
+        F = lambda x: self.T(x) * np.abs(1.0 * (self.__cumu(x) <= tmp) - self.alpha)
         for i, rS in enumerate(self.rSs):
             kdes.append(AKDE(rS,bw=bw,F=F(rS),a=a))
             covs.append(kdes[-1].f * kdes[-1].cov)
@@ -424,36 +423,34 @@ Truth = np.array([[-1.333, -1.895], [-1.886, -2.771], [-2.996, -4.424]])
 def experiment(pars):
     np.random.seed(19971107)
     print('Start {} {}'.format(pars[0], pars[1]))
-    mle = MLE(d=pars[0], alpha=pars[1], size=100000, show=True)
+    mle = MLE(d=pars[0], alpha=pars[1], size=100000, show=False)
     mle.disp('Reference for VaR{} (d={}): {}'.format(pars[1], pars[0], Truth[D == pars[0], Alpha == pars[1]]))
     mle.disp('==IS==================================================IS==')
     mle.estimate_IS()
     mle.resampling(size=2000, ratio=1000)
     mle.disp('==NIS================================================NIS==')
-    mle.clustering(auto=False, num=4, draw=True, write=False)
-    mle.estimate_NIS(rate=0.9)
+    mle.clustering(auto=False, num=4, draw=False, write=False)
+    mle.estimate_NIS(rate=0.9,bw=1,a=1/(3+pars[0]))
     mle.disp('==RIS================================================RIS==')
     mle.estimate_RIS()
-    # mle.disp('==MLE================================================MLE==')
-    # mle.estimate_MLE()
     print('End {} {}'.format(pars[0], pars[1]))
-    # return mle.Cache
+    return mle.Cache
 
 
 def main():
     begin = dt.now()
-    # Cache = []
-    # for d in D:
-    #     for alpha in Alpha:
-    #         Cache.append(experiment((d, alpha)))
-    experiment((2,0.05))
+    Cache = []
+    for d in D:
+        for alpha in Alpha:
+            Cache.append(experiment((d,alpha)))
+
     end = dt.now()
     print((end - begin).seconds)
-    # return Cache
+    return Cache
 
 
 if __name__ == '__main__':
-    main()
+    result=main()
     # result = main()
     # with open('Ian', 'wb') as file:
     #     pickle.dump(result, file)
