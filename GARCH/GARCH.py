@@ -243,7 +243,7 @@ class MLE:
         self.rSset = S[list(set(self.choice))]
         self.disp('resampling rate: {}/{}'.format(self.rSset.shape[0], size))
 
-    def clustering(self, seed=0, auto=False, num=4, draw=False, write=False):
+    def clustering(self, seed=0, auto=False, num=4, write=False):
         if auto:
             scaler = StandardScaler().fit(self.rS)
             kmeans = KMeans(n_clusters=num, random_state=seed).fit(scaler.transform(self.rS))
@@ -282,7 +282,7 @@ class MLE:
 
             self.group = group
 
-        if draw:
+        if self.show:
             data = pd.DataFrame(self.rS, columns=['phi0', 'phi1', 'beta'] \
                                                  + ['y{}'.format(i + 1) for i in range(self.rS.shape[1] - 3)])
             data['type'] = [self.group(s) for s in self.rS]
@@ -298,11 +298,22 @@ class MLE:
         tmp = np.copy(self.eVaR)
         F = lambda x: self.T(x) * np.abs(1.0 * (self.__cumu(x) <= tmp) - self.alpha)
         a = 1 / self.rS.shape[1] if adapt else 0
+        Hs = []
         for i, rS in enumerate(self.rSs):
             kdes.append(AKDE(rS,bw=bw,F=F(rS),a=a))
             covs.append(kdes[-1].f * kdes[-1].cov)
+            Hs.append(np.sqrt(kdes[-1].H2))
             self.disp('KDE {}: {} ({:.4f})' \
                       .format(i + 1, np.round(np.sqrt(np.diag(covs[-1])), 2), kdes[-1].f))
+
+        if self.show:
+            color = sb.color_palette()
+            for i, H in enumerate(Hs):
+                sb.histplot(H, color=color[i], label=i)
+
+            plt.legend()
+            plt.title('Adaptive bandwidth')
+            plt.show()
 
         rate0 = [rS.shape[0] / self.rS.shape[0] for rS in self.rSs]
         self.nP = lambda x: np.sum([r0 * kde.pdf(x) for r0, kde in zip(rate0, kdes)], axis=0)
@@ -422,28 +433,30 @@ Truth = np.array([[-1.333, -1.895], [-1.886, -2.771], [-2.996, -4.424]])
 
 
 def experiment(pars):
-    print('Start {} {}'.format(pars[0], pars[1]))
+    print('---> Start {} {} <---'.format(pars[0], pars[1]))
     mle = MLE(d=pars[0], alpha=pars[1], size=100000, show=True)
     mle.disp('Reference for VaR{} (d={}): {}'.format(pars[1], pars[0], Truth[D == pars[0], Alpha == pars[1]]))
     mle.disp('==IS==================================================IS==')
     mle.estimate_IS()
-    mle.resampling(size=1500, ratio=1000)
+    mle.resampling(size=2000, ratio=1000)
     mle.disp('==NIS================================================NIS==')
-    mle.clustering(auto=False, num=4, draw=False, write=False)
-    mle.estimate_NIS(rate=0.9,bw=1,adapt=True)
+    mle.clustering(auto=False, num=4, write=False)
+    mle.estimate_NIS(rate=0.9, bw=1, adapt=True)
     mle.disp('==RIS================================================RIS==')
     mle.estimate_RIS()
-    print('End {} {}'.format(pars[0], pars[1]))
+    # mle.disp('==MLE================================================MLE==')
+    # mle.estimate_MLE()
+    print('---> End {} {} <---'.format(pars[0], pars[1]))
     return mle.Cache
 
 
-def main(save=False,ret=False):
+def main(save=False, ret=False):
     begin = dt.now()
     Cache = []
-    for d in D:
-        for alpha in Alpha:
-            Cache.append(experiment((d,alpha)))
-
+    # for d in D:
+    #     for alpha in Alpha:
+    #         Cache.append(experiment((d,alpha)))
+    Cache.append(experiment((1, 0.05)))
     end = dt.now()
     print((end - begin).seconds)
     if save:
@@ -456,5 +469,5 @@ def main(save=False,ret=False):
 
 
 if __name__ == '__main__':
-    main(save=False,ret=False)
+    main()
 
