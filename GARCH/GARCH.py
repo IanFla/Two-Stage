@@ -9,6 +9,7 @@ from wquantiles import quantile
 import statsmodels.api as sm
 import multiprocessing
 import pickle
+from collections import Counter
 
 from scipy.stats import norm, t, truncnorm, multinomial
 from scipy.stats import multivariate_normal as mvnorm
@@ -17,13 +18,11 @@ from scipy.spatial import Delaunay as TRI
 from scipy.interpolate import LinearNDInterpolator as ITP
 from scipy.optimize import minimize, root
 from scipy.optimize import NonlinearConstraint as NonlinCons
-from scipy.stats import gaussian_kde as sciKDE
 from scipy.stats import gmean
 
 from sklearn.linear_model import LinearRegression as Linear
 from sklearn.linear_model import Ridge
 from sklearn.linear_model import Lasso
-from sklearn.neighbors import KernelDensity as sklKDE
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
@@ -150,10 +149,11 @@ garch.laplace(inflate=2, df=1)
 
 
 class AKDE:
-    def __init__(self, rS, bw, F, a):
+    def __init__(self, rS, neff, bw, F, a):
         self.rS = rS
         self.K = rS.shape[0]
-        self.f = bw * sciKDE(rS.T, bw_method='silverman').factor
+        scott = neff ** (-1 / (rS.shape[1] + 4))
+        self.f = bw * scott
         self.cov = np.cov(rS.T)
         self.gm = gmean(F)
         self.H2 = (F / self.gm) ** (-2 * a)
@@ -161,7 +161,7 @@ class AKDE:
     def pdf(self, S):
         res = np.zeros(S.shape[0])
         for i, loc in enumerate(self.rS):
-            res += mvnorm.pdf(x=S, mean=loc, cov=self.f * self.H2[i] * self.cov)
+            res += mvnorm.pdf(x=S, mean=loc, cov=self.f**2 * self.H2[i] * self.cov)
 
         return res / self.K
 
@@ -171,7 +171,7 @@ class AKDE:
         cumsizes = np.append(0, np.cumsum(sizes))
         for i, loc in enumerate(self.rS):
             res[cumsizes[i]:cumsizes[i + 1], :] = mvnorm.rvs(size=sizes[i], mean=loc,
-                                                             cov=self.f * self.H2[i] * self.cov)
+                                                             cov=self.f**2 * self.H2[i] * self.cov)
 
         return res
 
@@ -243,13 +243,20 @@ class MLE:
         self.rSset = S[list(set(self.choice))]
         self.disp('resampling rate: {}/{}'.format(self.rSset.shape[0], size))
 
+    def __neff(self, input):
+        Num = np.array(list(Counter(input).values()))
+        W = Num / Num.sum()
+        return 1 / np.sum(W**2)
+
     def clustering(self, seed=0, auto=False, num=4, write=False):
         if auto:
             scaler = StandardScaler().fit(self.rS)
             kmeans = KMeans(n_clusters=num, random_state=seed).fit(scaler.transform(self.rS))
             self.rSs = [self.rS[kmeans.labels_ == i] for i in range(num)]
             nums = [len(set(self.choice[kmeans.labels_ == i])) for i in range(num)]
-            self.disp('Clustering: {}/{}'.format(nums, [rS.shape[0] for rS in self.rSs]))
+            self.neffs = [self.__neff(self.choice[kmeans.labels_ == i]) for i in range(num)]
+            self.disp('Clustering: {}/{}/{}'.format(np.round(self.neffs).astype(np.int64), nums, \
+                                                    [rS.shape[0] for rS in self.rSs]))
             self.group = lambda s: kmeans.predict(scaler.transform([s]))[0]
         else:
             rS1 = self.rS[self.__cumu(self.rS) <= self.eVaR]
@@ -262,11 +269,17 @@ class MLE:
             lb2 = kmeans2.labels_
             self.rSs = [rS1[lb1 == 1], rS1[lb1 == 0], rS2[lb2 == 1], rS2[lb2 == 0]]
             num1 = len(set(self.choice[self.__cumu(self.rS) <= self.eVaR][lb1 == 1]))
+            neff1 = self.__neff(self.choice[self.__cumu(self.rS) <= self.eVaR][lb1 == 1])
             num2 = len(set(self.choice[self.__cumu(self.rS) <= self.eVaR][lb1 == 0]))
+            neff2 = self.__neff(self.choice[self.__cumu(self.rS) <= self.eVaR][lb1 == 0])
             num3 = len(set(self.choice[self.__cumu(self.rS) > self.eVaR][lb2 == 1]))
+            neff3 = self.__neff(self.choice[self.__cumu(self.rS) > self.eVaR][lb2 == 1])
             num4 = len(set(self.choice[self.__cumu(self.rS) > self.eVaR][lb2 == 0]))
-            self.disp('Clustering: {}/{}, {}/{}, {}/{}, {}/{}' \
-                      .format(num1, lb1.sum(), num2, (1 - lb1).sum(), num3, lb2.sum(), num4, (1 - lb2).sum()))
+            neff4 = self.__neff(self.choice[self.__cumu(self.rS) > self.eVaR][lb2 == 0])
+            self.neffs = [neff1, neff2, neff3, neff4]
+            self.disp('Clustering: {:.0f}/{}/{}, {:.0f}/{}/{}, {:.0f}/{}/{}, {:.0f}/{}/{}' \
+                      .format(neff1, num1, lb1.sum(), neff2, num2, (1 - lb1).sum(), \
+                              neff3, num3, lb2.sum(), neff4, num4, (1 - lb2).sum()))
             tmp = np.copy(self.eVaR)
             def group(s):
                 if s[3:].sum() <= tmp:
@@ -300,8 +313,8 @@ class MLE:
         a = 1 / self.rS.shape[1] if adapt else 0
         Hs = []
         for i, rS in enumerate(self.rSs):
-            kdes.append(AKDE(rS,bw=bw,F=F(rS),a=a))
-            covs.append(kdes[-1].f * kdes[-1].cov)
+            kdes.append(AKDE(rS,neff=self.neffs[i],bw=bw,F=F(rS),a=a))
+            covs.append(kdes[-1].f**2 * kdes[-1].cov)
             Hs.append(np.sqrt(kdes[-1].H2))
             self.disp('KDE {}: {} ({:.4f})' \
                       .format(i + 1, np.round(np.sqrt(np.diag(covs[-1])), 2), kdes[-1].f))
@@ -430,18 +443,20 @@ class MLE:
 D = np.array([1, 2, 5])
 Alpha = np.array([0.05, 0.01])
 Truth = np.array([[-1.333, -1.895], [-1.886, -2.771], [-2.996, -4.424]])
+params = [[1500, 1.1], [2000, 1.3], [3000, 1.4]]
 
 
-def experiment(pars):
+def experiment(pars,rN,bw):
+    # np.random.seed(19971107)
     print('---> Start {} {} <---'.format(pars[0], pars[1]))
     mle = MLE(d=pars[0], alpha=pars[1], size=100000, show=True)
     mle.disp('Reference for VaR{} (d={}): {}'.format(pars[1], pars[0], Truth[D == pars[0], Alpha == pars[1]]))
     mle.disp('==IS==================================================IS==')
     mle.estimate_IS()
-    mle.resampling(size=2000, ratio=1000)
+    mle.resampling(size=rN, ratio=1000)
     mle.disp('==NIS================================================NIS==')
     mle.clustering(auto=False, num=4, write=False)
-    mle.estimate_NIS(rate=0.9, bw=1, adapt=True)
+    mle.estimate_NIS(rate=0.9, bw=bw, adapt=True)
     mle.disp('==RIS================================================RIS==')
     mle.estimate_RIS()
     # mle.disp('==MLE================================================MLE==')
@@ -450,13 +465,13 @@ def experiment(pars):
     return mle.Cache
 
 
-def main(save=False, ret=False):
+def main(save=False, ret=True):
     begin = dt.now()
     Cache = []
-    # for d in D:
-    #     for alpha in Alpha:
-    #         Cache.append(experiment((d,alpha)))
-    Cache.append(experiment((1, 0.05)))
+    for i,d in enumerate(D):
+        for alpha in Alpha:
+            Cache.append(experiment((d,alpha), rN=params[i][0], bw=params[i][1]))
+
     end = dt.now()
     print((end - begin).seconds)
     if save:
@@ -469,5 +484,5 @@ def main(save=False, ret=False):
 
 
 if __name__ == '__main__':
-    main()
+    result = main()
 
