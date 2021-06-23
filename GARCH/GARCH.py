@@ -447,7 +447,7 @@ params = [[1500, 1.1], [2000, 1.3], [3000, 1.4]]
 
 
 def experiment(pars,rN,bw):
-    # np.random.seed(19971107)
+    np.random.seed(19971107)
     print('---> Start {} {} <---'.format(pars[0], pars[1]))
     mle = MLE(d=pars[0], alpha=pars[1], size=100000, show=True)
     mle.disp('Reference for VaR{} (d={}): {}'.format(pars[1], pars[0], Truth[D == pars[0], Alpha == pars[1]]))

@@ -4,8 +4,6 @@
     <content url="file://$MODULE_DIR$" />
     <orderEntry type="inheritedJdk" />
     <orderEntry type="sourceFolder" forTests="false" />
-  </component>
-  <component name="PyDocumentationSettings">
-    <option name="renderExternalDocumentation" value="true" />
+    <orderEntry type="module" module-name="Maxmin-Sampling" />
   </component>
 </module>
