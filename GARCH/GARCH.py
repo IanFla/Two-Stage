@@ -2,27 +2,18 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 from datetime import datetime as dt
-from pandas_datareader import DataReader as DR
+from pandas_datareader import DataReader
 import seaborn as sb
 import numdifftools as nd
 from wquantiles import quantile
-import statsmodels.api as sm
-import multiprocessing
 import pickle
-from collections import Counter
 
-from scipy.stats import norm, t, truncnorm, multinomial
+from scipy.stats import norm, t
 from scipy.stats import multivariate_normal as mvnorm
-from scipy.stats import multivariate_t as mvt
-from scipy.spatial import Delaunay as TRI
-from scipy.interpolate import LinearNDInterpolator as ITP
-from scipy.optimize import minimize, root
-from scipy.optimize import NonlinearConstraint as NonlinCons
+from scipy.optimize import minimize
 from scipy.stats import gmean
 
 from sklearn.linear_model import LinearRegression as Linear
-from sklearn.linear_model import Ridge
-from sklearn.linear_model import Lasso
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler
 
@@ -30,165 +21,184 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-data = DR('^GSPC', 'yahoo', dt(2010, 9, 29), dt(2011, 7, 14))
+data = DataReader('^GSPC', 'yahoo', dt(2010, 9, 29), dt(2011, 7, 14))
 returns = pd.DataFrame(100 * np.diff(np.log(data['Adj Close'])), columns=['dlr'])
 returns.index = data.index.values[1:data.index.values.shape[0]]
 returns = np.array(returns['dlr'])
 
 
 class GARCH:
-    def __init__(self, returns):
-        self.h0 = np.std(returns)
-        self.y0 = returns[0]
-        self.YT = returns[1:]
-        self.T = self.YT.size
+    def __init__(self, ys):
+        self.h0 = np.std(ys)
+        self.y0 = ys[0]
+        self.y1toT = ys[1:]
+        self.T = self.y1toT.size
         self.prior_pars = [-1, 2]
+        self.rvs_trunc = None
+        self.pdf_trunc = None
 
-    def posterior(self, pars, Z=57):
-        neglogpdfpT = 0.5 * ((pars[:, 0] - self.prior_pars[0]) / self.prior_pars[1]) ** 2
-        H = np.exp(pars[:, 0]) + pars[:, 1] * self.y0 ** 2 + pars[:, 2] * self.h0
+    def posterior(self, pars, scaler=57):
+        neglogpdfp0toT = 0.5 * ((pars[:, 0] - self.prior_pars[0]) / self.prior_pars[1]) ** 2
+        h = np.exp(pars[:, 0]) + pars[:, 1] * self.y0 ** 2 + pars[:, 2] * self.h0
         for i in range(self.T):
-            neglogpdfpT += 0.5 * (self.YT[i] ** 2 / H + np.log(H))
-            H = np.exp(pars[:, 0]) + pars[:, 1] * self.YT[i] ** 2 + pars[:, 2] * H
+            neglogpdfp0toT += 0.5 * (self.y1toT[i] ** 2 / h + np.log(h))
+            h = np.exp(pars[:, 0]) + pars[:, 1] * self.y1toT[i] ** 2 + pars[:, 2] * h
 
-        return neglogpdfpT - Z
+        return neglogpdfp0toT - scaler
 
-    def __test(self, pars):
+    @staticmethod
+    def __test(pars):
         return (pars[:, 1] >= 0) & (pars[:, 2] >= 0) & (pars[:, 1] + pars[:, 2] < 1)
 
     def laplace(self, inflate=2, df=1, p_acc=0.481842):
-        cons = ({'type': 'ineq', \
-                 'fun': lambda pars: np.array([pars[1], pars[2], 1 - pars[1] - pars[2]]), \
+        cons = ({'type': 'ineq',
+                 'fun': lambda pars: np.array([pars[1], pars[2], 1 - pars[1] - pars[2]]),
                  'jac': lambda x: np.array([[0, 1, 0], [0, 0, 1], [0, -1, -1]])})
         target = lambda pars: self.posterior(pars.reshape([1, -1]))
-        res = minimize(target, [0, 0.1, 0.7], method='SLSQP', constraints=cons, \
+        mu0 = np.array([0, 0.1, 0.7])
+        res = minimize(target, mu0, method='SLSQP', constraints=cons,
                        options={'maxiter': 1000, 'ftol': 1e-100, 'gtol': 1e-100, 'disp': False})
         mu = res['x']
         Sigma = np.linalg.inv(nd.Hessian(target)(mu))
         Sigma[:, 0] *= inflate
         Sigma[0, :] *= inflate
-        pars_full = lambda size: np.array([t.rvs(size=size, df=df, loc=mu[i], \
-                                                 scale=np.sqrt(Sigma[i, i])) for i in range(3)]).T
+        rvs_full = lambda size: np.array([t.rvs(size=size, df=df, loc=mu[i],
+                                                scale=np.sqrt(Sigma[i, i])) for i in range(3)]).T
 
-        def pars_trunc(size):
-            pars = pars_full(int(2 * size / p_acc))
+        def rvs_trunc(size):
+            pars = rvs_full(int(2 * size / p_acc))
             good = self.__test(pars)
             return pars[good][:size]
 
-        def lplc_trunc(pars):
+        def pdf_trunc(pars):
             good = self.__test(pars)
-            pdf = np.prod([t.pdf(x=pars[:, i], df=df, loc=mu[i], \
+            pdf = np.prod([t.pdf(x=pars[:, i], df=df, loc=mu[i],
                                  scale=np.sqrt(Sigma[i, i])) for i in range(3)], axis=0)
             return good * pdf / p_acc
 
-        self.pars_trunc = pars_trunc
-        self.lplc_trunc = lplc_trunc
+        self.rvs_trunc = rvs_trunc
+        self.pdf_trunc = pdf_trunc
 
-    def __supp(self, H, ub=1e300):
-        H[H > ub] = ub
-        return H
+    @staticmethod
+    def __supp(h, ub=1e300):
+        h[h > ub] = ub
+        return h
 
     def process(self, pars):
-        H_T1 = np.exp(pars[:, 0]) + pars[:, 1] * self.y0 ** 2 + pars[:, 2] * self.h0
+        h = np.exp(pars[:, 0]) + pars[:, 1] * self.y0 ** 2 + pars[:, 2] * self.h0
         for i in range(self.T):
-            H_T1 = np.exp(pars[:, 0]) + pars[:, 1] * self.YT[i] ** 2 + pars[:, 2] * H_T1
+            h = np.exp(pars[:, 0]) + pars[:, 1] * self.y1toT[i] ** 2 + pars[:, 2] * h
 
-        H_T1 = self.__supp(H_T1)
-        return H_T1
+        return self.__supp(h)
 
     def predict(self, d, size):
-        pars = self.pars_trunc(size)
-        H_Td = self.process(pars)
-        Yd = np.zeros([size, d])
+        pars = self.rvs_trunc(size)
+        h = self.process(pars)
+        ypre = np.zeros([size, d])
         for i in range(d - 1):
-            Yd[:, i] = norm.rvs(scale=np.sqrt(H_Td))
-            H_Td = np.exp(pars[:, 0]) + pars[:, 1] * Yd[:, i] ** 2 + pars[:, 2] * H_Td
-            H_Td = self.__supp(H_Td)
+            ypre[:, i] = norm.rvs(scale=np.sqrt(h))
+            h = np.exp(pars[:, 0]) + pars[:, 1] * ypre[:, i] ** 2 + pars[:, 2] * h
+            h = self.__supp(h)
 
         half = size // 2
-        Yd[:half, -1] = norm.rvs(scale=np.sqrt(H_Td[:half]))
-        Yd[half:, -1] = norm.rvs(loc=-np.sqrt(H_Td[half:]), scale=np.sqrt(H_Td[half:]))
-        return pars, Yd
+        ypre[:half, -1] = norm.rvs(scale=np.sqrt(h[:half]))
+        ypre[half:, -1] = norm.rvs(loc=-np.sqrt(h[half:]), scale=np.sqrt(h[half:]))
+        return pars, ypre
 
-    def proposal(self, pars, Yd):
+    def proposal(self, pars, ypre):
         good = self.__test(pars)
         pars = pars[good]
-        Yd = Yd[good]
-        H_Td = self.process(pars)
-        pdfq = self.lplc_trunc(pars)
-        for i in range(Yd.shape[1] - 1):
-            pdfq *= norm.pdf(x=Yd[:, i], scale=np.sqrt(H_Td))
-            H_Td = np.exp(pars[:, 0]) + pars[:, 1] * Yd[:, i] ** 2 + pars[:, 2] * H_Td
-            H_Td = self.__supp(H_Td)
+        ypre = ypre[good]
+        h = self.process(pars)
+        pdfq = self.pdf_trunc(pars)
+        for i in range(ypre.shape[1] - 1):
+            pdfq *= norm.pdf(x=ypre[:, i], scale=np.sqrt(h))
+            h = np.exp(pars[:, 0]) + pars[:, 1] * ypre[:, i] ** 2 + pars[:, 2] * h
+            h = self.__supp(h)
 
-        pdfq *= (norm.pdf(x=Yd[:, -1], scale=np.sqrt(H_Td)) + \
-                 norm.pdf(x=Yd[:, -1], loc=-np.sqrt(H_Td), scale=np.sqrt(H_Td))) / 2
+        pdfq *= (norm.pdf(x=ypre[:, -1], scale=np.sqrt(h)) +
+                 norm.pdf(x=ypre[:, -1], loc=-np.sqrt(h), scale=np.sqrt(h))) / 2
 
-        tmp = 1.0 * np.zeros_like(good)
-        tmp[good] = pdfq
-        return tmp
+        out = 1.0 * np.zeros_like(good)
+        out[good] = pdfq
+        return out
 
-    def target(self, pars, Yd):
+    def target(self, pars, ypre):
         good = self.__test(pars)
         pars = pars[good]
-        Yd = Yd[good]
-        H_Td = self.process(pars)
+        ypre = ypre[good]
+        h = self.process(pars)
         pdfp = np.exp(-self.posterior(pars))
-        for i in range(Yd.shape[1]):
-            pdfp *= norm.pdf(x=Yd[:, i], scale=np.sqrt(H_Td))
-            H_Td = np.exp(pars[:, 0]) + pars[:, 1] * Yd[:, i] ** 2 + pars[:, 2] * H_Td
-            H_Td = self.__supp(H_Td)
+        for i in range(ypre.shape[1]):
+            pdfp *= norm.pdf(x=ypre[:, i], scale=np.sqrt(h))
+            h = np.exp(pars[:, 0]) + pars[:, 1] * ypre[:, i] ** 2 + pars[:, 2] * h
+            h = self.__supp(h)
 
-        tmp = 1.0 * np.zeros_like(good)
-        tmp[good] = pdfp
-        return tmp
+        out = 1.0 * np.zeros_like(good)
+        out[good] = pdfp
+        return out
 
 
 garch = GARCH(returns)
 garch.laplace(inflate=2, df=1)
 
 
-class AKDE:
-    def __init__(self, rS, neff, bw, F, a):
-        self.rS = rS
-        self.K = rS.shape[0]
-        scott = neff ** (-1 / (rS.shape[1] + 4))
-        self.f = bw * scott
-        self.cov = np.cov(rS.T)
-        self.gm = gmean(F)
-        self.H2 = (F / self.gm) ** (-2 * a)
+class AdaptiveKDE:
+    def __init__(self, centers, weights, bw, fs, a):
+        self.centers = centers
+        cov = np.cov(centers.T, fweights=weights)
+        self.weights = weights / weights.sum()
+        self.neff = 1 / np.sum(self.weights ** 2)
+        scott = self.neff ** (-1 / (centers.shape[1] + 4))
+        self.factor = bw * scott
+        self.cov = (self.factor ** 2) * cov
+        self.gm = gmean(fs)
+        self.hs = (fs / self.gm) ** (-2 * a)
 
-    def pdf(self, S):
-        res = np.zeros(S.shape[0])
-        for i, loc in enumerate(self.rS):
-            res += mvnorm.pdf(x=S, mean=loc, cov=self.f**2 * self.H2[i] * self.cov)
+    def pdf(self, samples):
+        density = np.zeros(samples.shape[0])
+        for i, loc in enumerate(self.centers):
+            density += self.weights[i] * mvnorm.pdf(x=samples, mean=loc, cov=self.hs[i] * self.cov)
 
-        return res / self.K
+        return density
 
     def rvs(self, size):
-        res = np.zeros([size, self.rS.shape[1]])
-        sizes = multinomial.rvs(n=size, p=np.ones(self.K) / self.K)
-        cumsizes = np.append(0, np.cumsum(sizes))
-        for i, loc in enumerate(self.rS):
-            res[cumsizes[i]:cumsizes[i + 1], :] = mvnorm.rvs(size=sizes[i], mean=loc,
-                                                             cov=self.f**2 * self.H2[i] * self.cov)
+        samples = np.zeros([size, self.centers.shape[1]])
+        sizes = np.random.multinomial(n=size, pvals=self.weights)
+        cum_sizes = np.append(0, np.cumsum(sizes))
+        for i, loc in enumerate(self.centers):
+            samples[cum_sizes[i]:cum_sizes[i + 1]] = mvnorm.rvs(size=sizes[i], mean=loc, cov=self.hs[i] * self.cov)
 
-        return res
+        return samples
 
 
 class MLE:
-    def __init__(self, d, alpha, size, show=True):
+    def __init__(self, d, alpha, size_est, show=True):
         self.show = show
-        self.result = []
         self.Cache = []
+        self.result = []
+
         self.alpha = alpha
         aVar = np.array([alpha * (1 - alpha), 4 * (alpha * (1 - alpha)) ** 2])
         self.disp('Reference for a-var (prob) [direct, optimal]: {}'.format(np.round(aVar, 6)))
 
-        self.T = lambda x: garch.target(x[:, :3], x[:, 3:])
-        self.iP = lambda x: garch.proposal(x[:, :3], x[:, 3:])
-        self.iS = lambda size: np.hstack(garch.predict(d, size))
-        self.size = size
+        self.target = lambda x: garch.target(x[:, :3], x[:, 3:])
+        self.init_proposal = lambda x: garch.proposal(x[:, :3], x[:, 3:])
+        self.init_sampler = lambda size: np.hstack(garch.predict(d, size))
+        self.size = size_est
+
+        self.centers = None
+        self.weights = None
+        self.fs = None
+        self.labels = None
+
+        self.proportions = None
+        self.kdes = None
+
+        self.samples_ = None
+        self.target_ = None
+        self.proposal_ = None
+        self.controls_ = None
 
     def disp(self, text):
         if self.show:
@@ -196,248 +206,191 @@ class MLE:
         else:
             self.Cache.append(text)
 
-    def __cumu(self, x):
+    @staticmethod
+    def __cumu(x):
         return x[:, 3:].sum(axis=1)
 
-    def __divi(self, p, q):
+    @staticmethod
+    def __divi(p, q):
         q[q == 0] = 1
         return p / q
 
-    def __estimate(self, S, W, name, asym=True):
-        x = self.__cumu(S)
-        self.eVaR = quantile(x, W, self.alpha)
+    def __estimate(self, samples, weights, name, asym=True):
+        x = self.__cumu(samples)
+        self.eVaR = quantile(x, weights, self.alpha)
         self.result.append(self.eVaR)
         if asym:
-            w = W / np.sum(W)
+            w = weights / np.sum(weights)
             aVar = np.sum((w * (1.0 * (x <= self.eVaR) - self.alpha)) ** 2) * x.size
             ESS = 1 / np.sum(w ** 2)
-            Wf = W * (x <= self.eVaR)
-            wf = Wf / np.sum(Wf)
+            weighs_fun = weights * (x <= self.eVaR)
+            wf = weighs_fun / np.sum(weighs_fun)
             ESSf = 1 / np.sum(wf ** 2)
-            self.disp('{} est: {:.4f}; a-var (prob): {:.6f}; ESS: {:.0f}/{}; ESS(f): {:.0f}/{}' \
+            self.disp('{} est: {:.4f}; a-var (prob): {:.6f}; ESS: {:.0f}/{}; ESS(f): {:.0f}/{}'
                       .format(name, self.eVaR, aVar, ESS, x.size, ESSf, x.size))
         else:
             self.disp('{} est: {:.4f}'.format(name, self.eVaR))
 
-        if any(W < 0):
-            W[W < 0] = 0
-            self.eVaR = quantile(x, W, self.alpha)
+        if any(weights < 0):
+            weights[weights < 0] = 0
+            self.eVaR = quantile(x, weights, self.alpha)
             self.disp('(adjusted) {} est: {:.4f}'.format(name, self.eVaR))
 
-    def estimate_IS(self):
-        S = self.iS(self.size)
-        W = self.__divi(self.T(S), self.iP(S))
-        self.__estimate(S, W, 'IS')
+    def initial_estimation(self):
+        samples = self.init_sampler(self.size)
+        weights = self.__divi(self.target(samples), self.init_proposal(samples))
+        self.__estimate(samples, weights, 'IS')
 
     def resampling(self, size, ratio):
-        S = self.iS(ratio * size)
-        W = self.__divi(self.T(S), self.iP(S))
+        samples = self.init_sampler(ratio * size)
+        weights = self.__divi(self.target(samples), self.init_proposal(samples))
         if ratio * size > self.size:
-            self.__estimate(S, W, 'IS({})'.format(ratio * size))
+            self.__estimate(samples, weights, 'IS({})'.format(ratio * size))
 
-        p = W * np.abs(1.0 * (self.__cumu(S) <= self.eVaR) - self.alpha)
-        index = np.arange(S.shape[0])
-        self.choice = np.random.choice(index, size, p=p / np.sum(p), replace=True)
+        p = weights * np.abs(1.0 * (self.__cumu(samples) <= self.eVaR) - self.alpha)
+        sizes = np.random.multinomial(n=size, pvals=p / p.sum())
 
-        self.rS = S[self.choice]
-        self.rSset = S[list(set(self.choice))]
-        self.disp('resampling rate: {}/{}'.format(self.rSset.shape[0], size))
+        self.centers = samples[sizes != 0]
+        self.weights = sizes[sizes != 0]
+        self.disp('Resampling rate: {}/{}'.format(self.centers.shape[0], size))
+        self.fs = self.target(self.centers) * np.abs(1.0 * (self.__cumu(self.centers) <= self.eVaR) - self.alpha)
 
-    def __neff(self, input):
-        Num = np.array(list(Counter(input).values()))
-        W = Num / Num.sum()
-        return 1 / np.sum(W**2)
+    def __coun(self):
+        nums = np.array([[self.weights[self.labels == i].sum(), np.sum(self.labels == i)]
+                         for i in range(self.labels.max() + 1)]).T
+        self.proportions = nums[0] / nums[0].sum()
+        self.disp('Clustering: {}/{}'.format(nums[1], nums[0]))
 
-    def clustering(self, seed=0, auto=False, num=4, write=False):
+    def __draw(self):
+        df = pd.DataFrame(self.centers, columns=['phi0', 'phi1', 'beta'] +
+                                                ['y{}'.format(i + 1) for i in range(self.centers.shape[1] - 3)])
+        df['type'] = self.labels
+        sb.pairplot(df, hue='type')
+        plt.show()
+
+    def clustering(self, seed=0, auto=False, num=2):
         if auto:
-            scaler = StandardScaler().fit(self.rS)
-            kmeans = KMeans(n_clusters=num, random_state=seed).fit(scaler.transform(self.rS))
-            self.rSs = [self.rS[kmeans.labels_ == i] for i in range(num)]
-            nums = [len(set(self.choice[kmeans.labels_ == i])) for i in range(num)]
-            self.neffs = [self.__neff(self.choice[kmeans.labels_ == i]) for i in range(num)]
-            self.disp('Clustering: {}/{}/{}'.format(np.round(self.neffs).astype(np.int64), nums, \
-                                                    [rS.shape[0] for rS in self.rSs]))
-            self.group = lambda s: kmeans.predict(scaler.transform([s]))[0]
+            scaler = StandardScaler().fit(self.centers, sample_weight=self.weights)
+            kmeans = KMeans(n_clusters=num, random_state=seed).fit(scaler.transform(self.centers),
+                                                                   sample_weight=self.weights)
+            self.labels = kmeans.labels_
         else:
-            rS1 = self.rS[self.__cumu(self.rS) <= self.eVaR]
-            rS2 = self.rS[self.__cumu(self.rS) > self.eVaR]
-            scaler1 = StandardScaler().fit(rS1)
-            scaler2 = StandardScaler().fit(rS2)
-            kmeans1 = KMeans(n_clusters=2, random_state=seed).fit(scaler1.transform(rS1))
-            kmeans2 = KMeans(n_clusters=2, random_state=seed).fit(scaler2.transform(rS2))
-            lb1 = kmeans1.labels_
-            lb2 = kmeans2.labels_
-            self.rSs = [rS1[lb1 == 1], rS1[lb1 == 0], rS2[lb2 == 1], rS2[lb2 == 0]]
-            num1 = len(set(self.choice[self.__cumu(self.rS) <= self.eVaR][lb1 == 1]))
-            neff1 = self.__neff(self.choice[self.__cumu(self.rS) <= self.eVaR][lb1 == 1])
-            num2 = len(set(self.choice[self.__cumu(self.rS) <= self.eVaR][lb1 == 0]))
-            neff2 = self.__neff(self.choice[self.__cumu(self.rS) <= self.eVaR][lb1 == 0])
-            num3 = len(set(self.choice[self.__cumu(self.rS) > self.eVaR][lb2 == 1]))
-            neff3 = self.__neff(self.choice[self.__cumu(self.rS) > self.eVaR][lb2 == 1])
-            num4 = len(set(self.choice[self.__cumu(self.rS) > self.eVaR][lb2 == 0]))
-            neff4 = self.__neff(self.choice[self.__cumu(self.rS) > self.eVaR][lb2 == 0])
-            self.neffs = [neff1, neff2, neff3, neff4]
-            self.disp('Clustering: {:.0f}/{}/{}, {:.0f}/{}/{}, {:.0f}/{}/{}, {:.0f}/{}/{}' \
-                      .format(neff1, num1, lb1.sum(), neff2, num2, (1 - lb1).sum(), \
-                              neff3, num3, lb2.sum(), neff4, num4, (1 - lb2).sum()))
-            tmp = np.copy(self.eVaR)
-            def group(s):
-                if s[3:].sum() <= tmp:
-                    if kmeans1.predict(scaler1.transform([s]))[0] == 1:
-                        return 0
-                    else:
-                        return 1
-                else:
-                    if kmeans2.predict(scaler2.transform([s]))[0] == 1:
-                        return 2
-                    else:
-                        return 3
+            index = self.__cumu(self.centers) <= self.eVaR
+            centers1 = self.centers[index]
+            weights1 = self.weights[index]
+            centers2 = self.centers[~index]
+            weights2 = self.weights[~index]
+            scaler1 = StandardScaler().fit(centers1, sample_weight=weights1)
+            scaler2 = StandardScaler().fit(centers2, sample_weight=weights2)
+            kmeans1 = KMeans(n_clusters=num, random_state=seed).fit(scaler1.transform(centers1), sample_weight=weights1)
+            kmeans2 = KMeans(n_clusters=num, random_state=seed).fit(scaler2.transform(centers2), sample_weight=weights2)
+            self.labels = np.ones_like(index, dtype=np.int)
+            self.labels[index] = kmeans1.labels_
+            self.labels[~index] = kmeans2.labels_ + num
 
-            self.group = group
-
+        self.__coun()
         if self.show:
-            data = pd.DataFrame(self.rS, columns=['phi0', 'phi1', 'beta'] \
-                                                 + ['y{}'.format(i + 1) for i in range(self.rS.shape[1] - 3)])
-            data['type'] = [self.group(s) for s in self.rS]
-            if write:
-                data.to_csv('garch.csv', index=False)
+            self.__draw()
 
-            sb.pairplot(data, hue='type')
-            plt.show()
+    def __groups(self):
+        return [(self.labels == i) for i in range(self.labels.max() + 1)]
 
-    def estimate_NIS(self, rate, bw=1, adapt=True):
-        kdes = []
-        covs = []
-        tmp = np.copy(self.eVaR)
-        F = lambda x: self.T(x) * np.abs(1.0 * (self.__cumu(x) <= tmp) - self.alpha)
-        a = 1 / self.rS.shape[1] if adapt else 0
-        Hs = []
-        for i, rS in enumerate(self.rSs):
-            kdes.append(AKDE(rS,neff=self.neffs[i],bw=bw,F=F(rS),a=a))
-            covs.append(kdes[-1].f**2 * kdes[-1].cov)
-            Hs.append(np.sqrt(kdes[-1].H2))
-            self.disp('KDE {}: {} ({:.4f})' \
-                      .format(i + 1, np.round(np.sqrt(np.diag(covs[-1])), 2), kdes[-1].f))
+    def adaptive_kde(self, bw, a):
+        self.kdes = []
+        for i, labels in enumerate(self.__groups()):
+            self.kdes.append(AdaptiveKDE(self.centers[labels], self.weights[labels], bw=bw, fs=self.fs[labels], a=a))
+            self.disp('KDE {}: {} ({:.4f}, {:.0f})'.format(i + 1, np.round(np.sqrt(np.diag(self.kdes[-1].cov)), 2),
+                                                           self.kdes[-1].factor, self.kdes[-1].neff))
 
+    @staticmethod
+    def __onehot(p, threshold):
+        if p.max() / p.sum() >= threshold:
+            p[p != p.max()] = 0
+
+        return p
+
+    def shuffling(self, threshold=0.9):
+        ps = np.array([kde.pdf(self.centers) for kde in self.kdes]).T
+        for i, sample in enumerate(self.centers):
+            p = self.__onehot(ps[i], threshold=threshold)
+            self.labels[i] = np.random.choice(np.arange(self.labels.max() + 1), 1, p=p / p.sum())
+
+        self.__coun()
         if self.show:
-            color = sb.color_palette()
-            for i, H in enumerate(Hs):
-                sb.histplot(H, color=color[i], label=i)
+            self.__draw()
 
-            plt.legend()
-            plt.title('Adaptive bandwidth')
-            plt.show()
+    def nonparametric_estimation(self, bw=1, adapt=True, rate=0.9, time=0, period=10):
+        a = 1 / self.centers.shape[1] if adapt else 0
+        self.disp('Original KDE:')
+        self.adaptive_kde(bw=bw, a=a)
+        flag = True if self.show else False
+        for i in range(time):
+            if flag:
+                self.show = True if (i + 1) % period == 0 else False
 
-        rate0 = [rS.shape[0] / self.rS.shape[0] for rS in self.rSs]
-        self.nP = lambda x: np.sum([r0 * kde.pdf(x) for r0, kde in zip(rate0, kdes)], axis=0)
-        def nS(size):
-            sizes = np.round(size * np.array(rate0)).astype(np.int64)
+            self.shuffling()
+            self.disp('Shuffled({}) KDE:'.format(i + 1))
+            self.adaptive_kde(bw=bw, a=a)
+
+        self.show = flag
+        nonpar_proposal = lambda x: np.sum([p * kde.pdf(x) for p, kde in zip(self.proportions, self.kdes)], axis=0)
+
+        def nonpar_sampler(size):
+            sizes = np.round(size * self.proportions).astype(np.int64)
             sizes[-1] = size - sizes[:-1].sum()
-            return np.vstack([kde.rvs(sz) for kde, sz in zip(kdes, sizes)])
+            return np.vstack([kde.rvs(sz) for kde, sz in zip(self.kdes, sizes)])
 
-        self.nS = nS
-        def h(x,loc):
-            f = F(np.array([loc]))[0]
-            kde = kdes[self.group(loc)]
-            cov = (f/kde.gm) ** (-2 * a) * covs[self.group(loc)]
-            return mvnorm.pdf(x=x, mean=loc, cov=cov)
+        def controls(x):
+            out = np.zeros([self.centers.shape[0] - 1, x.shape[0]])
+            for j, loc in enumerate(self.centers[1:]):
+                label = self.labels[j + 1]
+                cov = (self.fs[j + 1] / self.kdes[label].gm) ** (-2 * a) * self.kdes[label].cov
+                out[j] = mvnorm.pdf(x=x, mean=loc, cov=cov)
 
-        self.G = lambda x: np.array([h(x, loc) for loc in self.rSset[1:]]) - self.nP(x)
+            return np.array(out) - nonpar_proposal(x)
 
-        S = self.nS(self.size)
-        W = self.__divi(self.T(S), self.nP(S))
-        self.__estimate(S, W, 'NIS')
+        samples = nonpar_sampler(self.size)
+        weights = self.__divi(self.target(samples), nonpar_proposal(samples))
+        self.__estimate(samples, weights, 'NIS')
 
-        self.mP = lambda x: (1 - rate) * self.iP(x) + rate * self.nP(x)
-        self.mS = lambda size: np.vstack([self.iS(size - round(rate * size)), self.nS(round(rate * size))])
-        self.S_ = self.mS(self.size)
-        self.T_ = self.T(self.S_)
-        self.mP_ = self.mP(self.S_)
-        W = self.__divi(self.T_, self.mP_)
-        self.__estimate(self.S_, W, 'MIS')
-        self.G_ = self.G(self.S_)
+        mix_proposal = lambda x: (1 - rate) * self.init_proposal(x) + rate * nonpar_proposal(x)
+        mix_sampler = lambda size: np.vstack([self.init_sampler(size - round(rate * size)),
+                                              nonpar_sampler(round(rate * size))])
+        self.samples_ = mix_sampler(self.size)
+        self.target_ = self.target(self.samples_)
+        self.proposal_ = mix_proposal(self.samples_)
+        weights = self.__divi(self.target_, self.proposal_)
+        self.__estimate(self.samples_, weights, 'MIS')
+        self.controls_ = controls(self.samples_)
 
-    def estimate_RIS(self):
-        X = (self.__divi(self.G_, self.mP_)).T
+    def regression_estimation(self):
+        X = (self.__divi(self.controls_, self.proposal_)).T
         tmp = X / np.linalg.norm(X, axis=0)
         lbd = np.linalg.eigvals(tmp.T.dot(tmp))
-        tau = np.sqrt(lbd.max() / lbd)
-        self.disp('Condition index: (min {:.4f}, median {:.4f}, mean {:.4f}, max {:.4f}, [>30] {}/{})' \
+        tau = np.sqrt(lbd.max(initial=0) / lbd)
+        self.disp('Condition index: (min {:.4f}, median {:.4f}, mean {:.4f}, max {:.4f}, [>30] {}/{})'
                   .format(tau.min(), np.median(tau), tau.mean(), tau.max(), np.sum(tau > 30), tau.size))
 
-        y2 = self.__divi(self.T_, self.mP_)
-        y1 = y2 * (self.__cumu(self.S_) <= self.eVaR)
+        y2 = self.__divi(self.target_, self.proposal_)
+        y1 = y2 * (self.__cumu(self.samples_) <= self.eVaR)
         y3 = y1 - self.alpha * y2
-        self.reg1 = Linear().fit(X, y1)
-        self.reg2 = Linear().fit(X, y2)
-        self.reg3 = Linear().fit(X, y3)
-        self.disp('Tail R2: {:.4f}; Body R2: {:.4f}; Overall R2: {:.4f}' \
-                  .format(self.reg1.score(X, y1), self.reg2.score(X, y2), self.reg3.score(X, y3)))
+        reg1 = Linear().fit(X, y1)
+        reg2 = Linear().fit(X, y2)
+        reg3 = Linear().fit(X, y3)
+        self.disp('Tail R2: {:.4f}; Body R2: {:.4f}; Overall R2: {:.4f}'
+                  .format(reg1.score(X, y1), reg2.score(X, y2), reg3.score(X, y3)))
 
-        W2 = y2 - X.dot(self.reg2.coef_)
-        W3 = y3 - X.dot(self.reg3.coef_)
+        W2 = y2 - X.dot(reg2.coef_)
+        W3 = y3 - X.dot(reg3.coef_)
         aVar = W2.size * np.sum(W3 ** 2) / (np.sum(W2)) ** 2
         self.disp('RIS a-var: {:.6f}'.format(aVar))
 
         XX = X - X.mean(axis=0)
-        self.zeta1 = np.linalg.solve(XX.T.dot(XX), X.sum(axis=0))
-        W = self.__divi(self.T_, self.mP_) * (1 - XX.dot(self.zeta1))
-        self.disp('reg weights: (min {:.4f}, mean {:.4f}, max {:.4f}, [<0] {}/{})' \
-                  .format(W.min(), W.mean(), W.max(), np.sum(W < 0), W.size))
-        self.__estimate(self.S_, W, 'RIS', asym=False)
-
-    def estimate_MLE(self, opt=True, NR=True):
-        target = lambda zeta: -np.mean(np.log(self.mP_ + zeta.dot(self.G_)))
-        gradient = lambda zeta: -np.mean(self.__divi(self.G_, self.mP_ + zeta.dot(self.G_)), axis=1)
-        hessian = lambda zeta: self.__divi(self.G_, (self.mP_ + zeta.dot(self.G_)) ** 2)\
-                                   .dot(self.G_.T) / self.G_.shape[1]
-        zeta0 = np.zeros(self.G_.shape[0])
-        grad0 = gradient(zeta0)
-        self.disp('MLE reference:')
-        self.disp('origin: value: {:.4f}; grad: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f})' \
-                  .format(target(zeta0), grad0.min(), grad0.mean(), grad0.max(), grad0.std()))
-
-        print()
-        self.disp('Theoretical results:')
-        self.disp('MLE(The) zeta: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f}, norm {:.4f})' \
-                  .format(self.zeta1.min(), self.zeta1.mean(), self.zeta1.max(), \
-                          self.zeta1.std(), np.sqrt(np.sum(self.zeta1 ** 2))))
-        grad1 = gradient(self.zeta1)
-        self.disp('theory: value: {:.4f}; grad: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f})' \
-                  .format(target(self.zeta1), grad1.min(), grad1.mean(), grad1.max(), grad1.std()))
-        W = self.__divi(self.T_, self.mP_ + self.zeta1.dot(self.G_))
-        self.disp('mle weights (The): (min {:.4f}, mean {:.4f}, max {:.4f}, [<0] {}/{})' \
-                  .format(W.min(), W.mean(), W.max(), np.sum(W < 0), W.size))
-        self.__estimate(self.S_, W, 'MLE(The)', asym=False)
-
-        if opt:
-            zeta = zeta0 if np.isnan(target(self.zeta1)) else self.zeta1
-            begin = dt.now()
-            if NR:
-                res = root(lambda zeta: (gradient(zeta), hessian(zeta)), zeta, method='lm', jac=True)
-            else:
-                cons = ({'type': 'ineq', 'fun': lambda zeta: self.mP_ + zeta.dot(self.G_), \
-                         'jac': lambda zeta: self.G_.T})
-                res = minimize(target, zeta, method='SLSQP', jac=gradient, constraints=cons, \
-                               options={'ftol': 1e-8, 'maxiter': 1000})
-
-            end = dt.now()
-            print()
-            self.disp('Optimization results (spent {} seconds):'.format((end - begin).seconds))
-            if res['success']:
-                zeta = res['x']
-                self.disp('MLE(Opt) zeta: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f}, norm {:.4f})' \
-                          .format(zeta.min(), zeta.mean(), zeta.max(), zeta.std(), np.sqrt(np.sum(zeta ** 2))))
-                self.disp('Dist(zeta(Opt),zeta(The))={:.4f}'.format(np.sqrt(np.sum((zeta - self.zeta1) ** 2))))
-                grad = gradient(zeta)
-                self.disp('optimal: value: {:.4f}; grad: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f})' \
-                          .format(target(zeta), grad.min(), grad.mean(), grad.max(), grad.std()))
-                W = self.__divi(self.T_, self.mP_ + zeta.dot(self.G_))
-                self.disp('mle weights (Opt): (min {:.4f}, mean {:.4f}, max {:.4f}, [<0] {}/{})' \
-                          .format(W.min(), W.mean(), W.max(), np.sum(W < 0), W.size))
-                self.__estimate(self.S_, W, 'MLE(Opt)', asym=False)
-            else:
-                self.disp('MLE fail')
+        zeta = np.linalg.solve(XX.T.dot(XX), X.sum(axis=0))
+        weights = self.__divi(self.target_, self.proposal_) * (1 - XX.dot(zeta))
+        self.disp('reg weights: (min {:.4f}, mean {:.4f}, max {:.4f}, [<0] {}/{})'
+                  .format(weights.min(), weights.mean(), weights.max(), np.sum(weights < 0), weights.size))
+        self.__estimate(self.samples_, weights, 'RIS', asym=False)
 
 
 D = np.array([1, 2, 5])
@@ -446,31 +399,29 @@ Truth = np.array([[-1.333, -1.895], [-1.886, -2.771], [-2.996, -4.424]])
 params = [[1500, 1.1], [2000, 1.3], [3000, 1.4]]
 
 
-def experiment(pars,rN,bw):
+def experiment(pars, size, bw):
     np.random.seed(19971107)
     print('---> Start {} {} <---'.format(pars[0], pars[1]))
-    mle = MLE(d=pars[0], alpha=pars[1], size=100000, show=True)
+    mle = MLE(d=pars[0], alpha=pars[1], size_est=100000, show=True)
     mle.disp('Reference for VaR{} (d={}): {}'.format(pars[1], pars[0], Truth[D == pars[0], Alpha == pars[1]]))
     mle.disp('==IS==================================================IS==')
-    mle.estimate_IS()
-    mle.resampling(size=rN, ratio=1000)
+    mle.initial_estimation()
+    mle.resampling(size=size, ratio=1000)
     mle.disp('==NIS================================================NIS==')
-    mle.clustering(auto=False, num=4, write=False)
-    mle.estimate_NIS(rate=0.9, bw=bw, adapt=True)
+    mle.clustering(auto=False, num=2)
+    mle.nonparametric_estimation(bw=bw, adapt=True, rate=0.9)
     mle.disp('==RIS================================================RIS==')
-    mle.estimate_RIS()
-    # mle.disp('==MLE================================================MLE==')
-    # mle.estimate_MLE()
+    mle.regression_estimation()
     print('---> End {} {} <---'.format(pars[0], pars[1]))
     return mle.Cache
 
 
-def main(save=False, ret=True):
+def main(save=False):
     begin = dt.now()
     Cache = []
-    for i,d in enumerate(D):
+    for i, d in enumerate(D):
         for alpha in Alpha:
-            Cache.append(experiment((d,alpha), rN=params[i][0], bw=params[i][1]))
+            Cache.append(experiment((d, alpha), size=params[i][0], bw=params[i][1]))
 
     end = dt.now()
     print((end - begin).seconds)
@@ -479,10 +430,8 @@ def main(save=False, ret=True):
             pickle.dump(Cache, file)
             file.close()
 
-    if ret:
-        return Cache
+    return Cache
 
 
 if __name__ == '__main__':
     result = main()
-
