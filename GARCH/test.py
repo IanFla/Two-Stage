@@ -395,6 +395,8 @@ def main():
         pickle.dump(results, file)
         file.close()
 
+    return results
+
 
 if __name__ == '__main__':
-    main()
+    ok = main()
