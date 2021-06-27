@@ -416,7 +416,7 @@ def experiment(pars, size, bw):
     return mle.Cache
 
 
-def main(save=False):
+def main():
     begin = dt.now()
     Cache = []
     for i, d in enumerate(D):
@@ -425,11 +425,6 @@ def main(save=False):
 
     end = dt.now()
     print((end - begin).seconds)
-    if save:
-        with open('Ian', 'wb') as file:
-            pickle.dump(Cache, file)
-            file.close()
-
     return Cache
 
 
