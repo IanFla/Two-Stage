@@ -171,36 +171,6 @@ class AdaptiveKDE:
         return samples
 
 
-class GroupSampling:
-    def __init__(self, d, target, proposal, size, ratio):
-        self.d = d
-        samples = proposal(size=2 * (ratio * size + self.d))[np.random.permutation(
-                  np.arange(2 * (ratio * size + self.d)))]
-        pdf = target(samples)
-        self.target = pdf[pdf != 0][: ratio * size + self.d]
-        self.samples = samples[pdf != 0][: ratio * size + self.d]
-        self.size = size
-        self.ratio = ratio
-        self.index = np.arange(self.d)
-
-    def __dist(self, ind, index):
-        dists = np.sqrt(((self.samples[ind] - self.samples[index]) ** 2).sum(axis=1))
-        sort = np.argsort(dists)
-        dists = dists[sort[:self.d]]
-        index = index[sort[:self.d]]
-        pdf = np.sqrt(gmean(self.target[index]) * self.target[ind])
-        return np.prod(dists) * pdf
-
-    def group_resampling(self):
-        for i in range(self.size):
-            group = self.d + self.ratio * i + np.arange(self.ratio)
-            dist = np.array([self.__dist(ind, self.index) for ind in group])
-            self.index = np.append(self.index, group[dist == dist.max(initial=0)])
-
-    def get_samples(self):
-        return self.samples[self.index]
-
-
 class MLE:
     def __init__(self, d, alpha, size_est, show=True):
         self.show = show
@@ -223,11 +193,6 @@ class MLE:
 
         self.proportions = None
         self.kdes = None
-        self.nonpar_proposal = None
-        self.nonpar_sampler = None
-        self.controls = None
-        self.mix_proposal = None
-        self.mix_sampler = None
 
         self.samples_ = None
         self.target_ = None
@@ -353,7 +318,7 @@ class MLE:
         if self.show:
             self.__draw()
 
-    def proposal(self, bw=1.0, adapt=True, rate=0.9, time=0, period=10):
+    def nonparametric_estimation(self, bw=1, adapt=True, rate=0.9, time=0, period=10):
         a = 1 / self.centers.shape[1] if adapt else 0
         self.disp('Original KDE:')
         self.adaptive_kde(bw=bw, a=a)
@@ -367,14 +332,12 @@ class MLE:
             self.adaptive_kde(bw=bw, a=a)
 
         self.show = flag
-        self.nonpar_proposal = lambda x: np.sum([p * kde.pdf(x) for p, kde in zip(self.proportions, self.kdes)], axis=0)
+        nonpar_proposal = lambda x: np.sum([p * kde.pdf(x) for p, kde in zip(self.proportions, self.kdes)], axis=0)
 
         def nonpar_sampler(size):
             sizes = np.round(size * self.proportions).astype(np.int64)
             sizes[-1] = size - sizes[:-1].sum()
             return np.vstack([kde.rvs(sz) for kde, sz in zip(self.kdes, sizes)])
-
-        self.nonpar_sampler = nonpar_sampler
 
         def controls(x):
             out = np.zeros([self.centers.shape[0] - 1, x.shape[0]])
@@ -383,32 +346,21 @@ class MLE:
                 cov = (self.fs[j + 1] / self.kdes[label].gm) ** (-2 * a) * self.kdes[label].cov
                 out[j] = mvnorm.pdf(x=x, mean=loc, cov=cov)
 
-            return np.array(out) - self.nonpar_proposal(x)
+            return np.array(out) - nonpar_proposal(x)
 
-        self.controls = controls
-        self.mix_proposal = lambda x: (1 - rate) * self.init_proposal(x) + rate * self.nonpar_proposal(x)
-        self.mix_sampler = lambda size: np.vstack([self.init_sampler(size - round(rate * size)),
-                                                   self.nonpar_sampler(round(rate * size))])
-
-    def gpsampling(self, size, ratio):
-        gptarget = lambda x: self.target(x) * np.abs(1.0 * (self.__cumu(x) <= self.eVaR) - self.alpha)
-        gp = GroupSampling(d=self.centers.shape[1], target=gptarget, proposal=self.mix_sampler, size=size, ratio=ratio)
-        gp.group_resampling()
-        self.centers = gp.get_samples()
-        self.weights = np.ones(self.centers.shape[0], dtype=np.int64)
-        self.fs = gptarget(self.centers)
-
-    def nonparametric_estimation(self):
-        samples = self.nonpar_sampler(self.size)
-        weights = self.__divi(self.target(samples), self.nonpar_proposal(samples))
+        samples = nonpar_sampler(self.size)
+        weights = self.__divi(self.target(samples), nonpar_proposal(samples))
         self.__estimate(samples, weights, 'NIS')
 
-        self.samples_ = self.mix_sampler(self.size)
+        mix_proposal = lambda x: (1 - rate) * self.init_proposal(x) + rate * nonpar_proposal(x)
+        mix_sampler = lambda size: np.vstack([self.init_sampler(size - round(rate * size)),
+                                              nonpar_sampler(round(rate * size))])
+        self.samples_ = mix_sampler(self.size)
         self.target_ = self.target(self.samples_)
-        self.proposal_ = self.mix_proposal(self.samples_)
+        self.proposal_ = mix_proposal(self.samples_)
         weights = self.__divi(self.target_, self.proposal_)
         self.__estimate(self.samples_, weights, 'MIS')
-        self.controls_ = self.controls(self.samples_)
+        self.controls_ = controls(self.samples_)
 
     def regression_estimation(self):
         X = (self.__divi(self.controls_, self.proposal_)).T
@@ -456,8 +408,7 @@ def experiment(pars, size, bw):
     mle.resampling(size=size, ratio=1000)
     mle.disp('==NIS================================================NIS==')
     mle.clustering(auto=False, num=2)
-    mle.proposal(bw=bw, adapt=True, rate=0.9, time=20, period=5)
-    mle.nonparametric_estimation()
+    mle.nonparametric_estimation(bw=bw, adapt=True, rate=0.9, time=0, period=5)
     mle.disp('==RIS================================================RIS==')
     mle.regression_estimation()
     print('---> End {} {} <---'.format(pars[0], pars[1]))
