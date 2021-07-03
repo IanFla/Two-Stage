@@ -364,7 +364,7 @@ params = [[1500, 1.1], [2000, 1.3], [3000, 1.4]]
 
 def experiment(pars, size, bw):
     print('---> Start {} {} <---'.format(pars[0], pars[1]))
-    mle = MLE(d=pars[0], alpha=pars[1], size_est=100000)
+    mle = MLE(d=pars[0], alpha=pars[1], size_est=1000000)
     mle.disp('Reference for VaR{} (d={}): {}'.format(pars[1], pars[0], Truth[D == pars[0], Alpha == pars[1]]))
     mle.disp('==IS==================================================IS==')
     mle.initial_estimation()
