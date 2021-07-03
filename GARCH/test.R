@@ -7,7 +7,8 @@ library(maxLik)
 library(weights)
 library(trust)
 
-logindex_hist<-read.csv2("SP500.csv",sep=",",dec=".",header=T,colClasses=c("Date",NA))
+setwd("/Users/ianfla/Documents/GitHub/Two-Stage/GARCH")
+logindex_hist<-read.csv2("SP500.csv", sep=",", dec=".", header=T, colClasses=c("Date", NA))
 length_hist<-dim(logindex_hist)[1]
 logreturn_hist<-logindex_hist$VALUE[-1]-logindex_hist$VALUE[-length_hist]
 y_hist<-100*logreturn_hist[2701:2900]

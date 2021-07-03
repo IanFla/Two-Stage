@@ -2,7 +2,6 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 from datetime import datetime as dt
-from pandas_datareader import DataReader
 import seaborn as sb
 import numdifftools as nd
 from wquantiles import quantile
@@ -20,10 +19,9 @@ import warnings
 
 warnings.filterwarnings("ignore")
 
-data = DataReader('^GSPC', 'yahoo', dt(2010, 9, 29), dt(2011, 7, 14))
-returns = pd.DataFrame(100 * np.diff(np.log(data['Adj Close'])), columns=['dlr'])
-returns.index = data.index.values[1:data.index.values.shape[0]]
-returns = np.array(returns['dlr'])
+DF = pd.read_csv('SP500.csv')
+data = DF.VALUE.values[1:] - DF.VALUE.values[:-1]
+returns = 100 * data[2700:2900]
 
 
 class GARCH:
