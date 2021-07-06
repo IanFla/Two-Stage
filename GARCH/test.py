@@ -6,6 +6,7 @@ import seaborn as sb
 import numdifftools as nd
 from wquantiles import quantile
 import pickle
+import multiprocessing
 
 from scipy.stats import norm, t
 from scipy.stats import multivariate_normal as mvnorm
@@ -376,20 +377,24 @@ def experiment(pars, size, bw):
     return mle.result
 
 
+def run(j):
+    begin = dt.now()
+    Cache = []
+    for i, d in enumerate(D):
+        for alpha in Alpha:
+            Cache.append(experiment((d, alpha), size=params[i][0], bw=params[i][1]))
+
+    end = dt.now()
+    print(j + 1, (end - begin).seconds)
+    return Cache
+
+
 def main():
-    results = []
-    for j in range(100):
-        begin = dt.now()
-        Cache = []
-        for i, d in enumerate(D):
-            for alpha in Alpha:
-                Cache.append(experiment((d, alpha), size=params[i][0], bw=params[i][1]))
+    pool = multiprocessing.Pool(10)
+    inputs = np.arange(3)
+    results = pool.map(run, inputs)
 
-        end = dt.now()
-        print(j + 1, (end - begin).seconds)
-        results.append(Cache)
-
-    with open('Ian', 'wb') as file:
+    with open('Ian2', 'wb') as file:
         pickle.dump(results, file)
         file.close()
 
