@@ -486,3 +486,34 @@ def main(save=False, ret=True):
 if __name__ == '__main__':
     result = main()
 
+
+###################################
+
+class GroupSampling:
+    def __init__(self, d, target, proposal, size, ratio):
+        self.d = d
+        samples = proposal(size=2 * (ratio * size + self.d))[np.random.permutation(
+                  np.arange(2 * (ratio * size + self.d)))]
+        pdf = target(samples)
+        self.target = pdf[pdf != 0][: ratio * size + self.d]
+        self.samples = samples[pdf != 0][: ratio * size + self.d]
+        self.size = size
+        self.ratio = ratio
+        self.index = np.arange(self.d)
+
+    def __dist(self, ind, index):
+        dists = np.sqrt(((self.samples[ind] - self.samples[index]) ** 2).sum(axis=1))
+        sort = np.argsort(dists)
+        dists = dists[sort[:self.d]]
+        index = index[sort[:self.d]]
+        pdf = np.sqrt(gmean(self.target[index]) * self.target[ind])
+        return np.prod(dists) * pdf
+
+    def group_resampling(self):
+        for i in range(self.size):
+            group = self.d + self.ratio * i + np.arange(self.ratio)
+            dist = np.array([self.__dist(ind, self.index) for ind in group])
+            self.index = np.append(self.index, group[dist == dist.max(initial=0)])
+
+    def get_samples(self):
+        return self.samples[self.index]

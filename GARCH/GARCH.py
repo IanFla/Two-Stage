@@ -6,7 +6,7 @@ import seaborn as sb
 import numdifftools as nd
 from wquantiles import quantile
 
-from scipy.stats import norm, t
+from scipy.stats import norm, t, uniform
 from scipy.stats import multivariate_normal as mvnorm
 from scipy.optimize import minimize
 from scipy.stats import gmean
@@ -150,53 +150,27 @@ class AdaptiveKDE:
         self.factor = bw * scott
         self.cov = (self.factor ** 2) * cov
         self.gm = gmean(fs)
-        self.hs = (fs / self.gm) ** (-2 * a)
+        self.h2s = (fs / self.gm) ** (-2 * a)
 
     def pdf(self, samples):
         density = np.zeros(samples.shape[0])
         for i, loc in enumerate(self.centers):
-            density += self.weights[i] * mvnorm.pdf(x=samples, mean=loc, cov=self.hs[i] * self.cov)
+            density += self.weights[i] * mvnorm.pdf(x=samples, mean=loc, cov=self.h2s[i] * self.cov)
 
         return density
 
     def rvs(self, size):
-        samples = np.zeros([size, self.centers.shape[1]])
-        sizes = np.random.multinomial(n=size, pvals=self.weights)
+        sizes = size * self.weights
+        remain = 1 * (uniform.rvs(size=self.weights.size) <= (sizes % 1))
+        sizes = np.int64(sizes) + remain
+        sizes[-1] = size - sizes[:-1].sum()
         cum_sizes = np.append(0, np.cumsum(sizes))
+
+        samples = np.zeros([size, self.centers.shape[1]])
         for i, loc in enumerate(self.centers):
-            samples[cum_sizes[i]:cum_sizes[i + 1]] = mvnorm.rvs(size=sizes[i], mean=loc, cov=self.hs[i] * self.cov)
+            samples[cum_sizes[i]:cum_sizes[i + 1]] = mvnorm.rvs(size=sizes[i], mean=loc, cov=self.h2s[i] * self.cov)
 
         return samples
-
-
-class GroupSampling:
-    def __init__(self, d, target, proposal, size, ratio):
-        self.d = d
-        samples = proposal(size=2 * (ratio * size + self.d))[np.random.permutation(
-                  np.arange(2 * (ratio * size + self.d)))]
-        pdf = target(samples)
-        self.target = pdf[pdf != 0][: ratio * size + self.d]
-        self.samples = samples[pdf != 0][: ratio * size + self.d]
-        self.size = size
-        self.ratio = ratio
-        self.index = np.arange(self.d)
-
-    def __dist(self, ind, index):
-        dists = np.sqrt(((self.samples[ind] - self.samples[index]) ** 2).sum(axis=1))
-        sort = np.argsort(dists)
-        dists = dists[sort[:self.d]]
-        index = index[sort[:self.d]]
-        pdf = np.sqrt(gmean(self.target[index]) * self.target[ind])
-        return np.prod(dists) * pdf
-
-    def group_resampling(self):
-        for i in range(self.size):
-            group = self.d + self.ratio * i + np.arange(self.ratio)
-            dist = np.array([self.__dist(ind, self.index) for ind in group])
-            self.index = np.append(self.index, group[dist == dist.max(initial=0)])
-
-    def get_samples(self):
-        return self.samples[self.index]
 
 
 class MLE:
@@ -388,14 +362,6 @@ class MLE:
         self.mix_sampler = lambda size: np.vstack([self.init_sampler(size - round(rate * size)),
                                                    self.nonpar_sampler(round(rate * size))])
 
-    def gpsampling(self, size, ratio):
-        gptarget = lambda x: self.target(x) * np.abs(1.0 * (self.__cumu(x) <= self.eVaR) - self.alpha)
-        gp = GroupSampling(d=self.centers.shape[1], target=gptarget, proposal=self.mix_sampler, size=size, ratio=ratio)
-        gp.group_resampling()
-        self.centers = gp.get_samples()
-        self.weights = np.ones(self.centers.shape[0], dtype=np.int64)
-        self.fs = gptarget(self.centers)
-
     def nonparametric_estimation(self):
         samples = self.nonpar_sampler(self.size)
         weights = self.__divi(self.target(samples), self.nonpar_proposal(samples))
@@ -445,7 +411,7 @@ params = [[1500, 1.1], [2000, 1.3], [3000, 1.4]]
 
 
 def experiment(pars, size, bw):
-    np.random.seed(19971107)
+    np.random.seed(3033079628)
     print('---> Start {} {} <---'.format(pars[0], pars[1]))
     mle = MLE(d=pars[0], alpha=pars[1], size_est=100000, show=True)
     mle.disp('Reference for VaR{} (d={}): {}'.format(pars[1], pars[0], Truth[D == pars[0], Alpha == pars[1]]))
