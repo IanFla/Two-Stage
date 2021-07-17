@@ -34,7 +34,7 @@ class KDE:
             scaler = StandardScaler().fit(self.centers, sample_weight=self.weights)
             standard_centers = scaler.transform(self.centers)
             covs = []
-            for i, center in enumerate(standard_centers):
+            for center in standard_centers:
                 index = self.dist(center, standard_centers)
                 cov = np.cov(self.centers[index].T, aweights=weights[index])
                 covs.append(cov)
@@ -55,9 +55,9 @@ class KDE:
 
     def pdf(self, samples):
         density = np.zeros(samples.shape[0])
-        for i, center in enumerate(self.centers):
-            cov = self.covs[i] if self.local else self.lambda2s[i] * self.covs
-            density += self.weights[i] * mvnorm.pdf(x=samples, mean=center, cov=cov)
+        for j, center in enumerate(self.centers):
+            cov = self.covs[j] if self.local else self.lambda2s[j] * self.covs
+            density += self.weights[j] * mvnorm.pdf(x=samples, mean=center, cov=cov)
 
         return density
 
@@ -69,9 +69,9 @@ class KDE:
         cum_sizes = np.append(0, np.cumsum(sizes))
 
         samples = np.zeros([size, self.centers.shape[1]])
-        for i, center in enumerate(self.centers):
-            cov = self.covs[i] if self.local else self.lambda2s[i] * self.covs
-            samples[cum_sizes[i]:cum_sizes[i + 1]] = mvnorm.rvs(size=sizes[i], mean=center, cov=cov)
+        for j, center in enumerate(self.centers):
+            cov = self.covs[j] if self.local else self.lambda2s[j] * self.covs
+            samples[cum_sizes[j]:cum_sizes[j + 1]] = mvnorm.rvs(size=sizes[j], mean=center, cov=cov)
 
         return samples
 
@@ -152,39 +152,38 @@ class MLE:
         self.ps = self.target(self.centers)
         self.ps /= gmean(self.ps)
 
-    def proposal(self, bw=1.0, local=False, gamma=0.1, a=0.5):
+    def proposal(self, bw=1.0, local=False, gamma=0.1, a=0.5, rate=0.9):
         self.kde = KDE(self.centers, self.weights, bw=bw, local=local, gamma=gamma, ps=self.ps, a=a)
         self.disp('KDE: (factor {:.4f}, ESS {:.0f})'.format(self.kde.factor, self.kde.neff))
         self.nonpar_proposal = self.kde.pdf
         self.nonpar_sampler = self.kde.rvs
-
-        def controls(x):
-            out = np.zeros([self.centers.shape[0] - 1, x.shape[0]])
-            for j, loc in enumerate(self.centers[1:]):
-                label = self.labels[j + 1]
-                cov = (self.fs[j + 1] / self.kdes[label].gm) ** (-2 * a) * self.kdes[label].cov
-                out[j] = mvnorm.pdf(x=x, mean=loc, cov=cov)
-
-            return np.array(out) - self.nonpar_proposal(x)
-
-        self.controls = controls
         self.mix_proposal = lambda x: (1 - rate) * self.init_proposal(x) + rate * self.nonpar_proposal(x)
         self.mix_sampler = lambda size: np.vstack([self.init_sampler(size - round(rate * size)),
                                                    self.nonpar_sampler(round(rate * size))])
 
-    def nonparametric_estimation(self):
-        samples = self.nonpar_sampler(self.size)
-        weights = self.__divi(self.target(samples), self.nonpar_proposal(samples))
-        self.__estimate(samples, weights, 'NIS')
+        def controls(x):
+            out = np.zeros([self.centers.shape[0], x.shape[0]])
+            for j, center in enumerate(self.centers):
+                cov = self.kde.covs[j] if local else self.kde.lambda2s[j] * self.kde.covs
+                out[j] = mvnorm.pdf(x=x, mean=center, cov=cov)
 
-        self.samples_ = self.mix_sampler(self.size)
+            return np.array(out) - self.nonpar_proposal(x)
+
+        self.controls = controls
+
+    def nonparametric_estimation(self):
+        samples = self.nonpar_sampler(self.size_est)
+        weights = self.__divi(self.target(samples), self.nonpar_proposal(samples))
+        self.__estimate(weights, 'NIS')
+
+        self.samples_ = self.mix_sampler(self.size_est)
         self.target_ = self.target(self.samples_)
         self.proposal_ = self.mix_proposal(self.samples_)
         weights = self.__divi(self.target_, self.proposal_)
-        self.__estimate(self.samples_, weights, 'MIS')
-        self.controls_ = self.controls(self.samples_)
+        self.__estimate(weights, 'MIS')
 
     def regression_estimation(self):
+        self.controls_ = self.controls(self.samples_)
         X = (self.__divi(self.controls_, self.proposal_)).T
         tmp = X / np.linalg.norm(X, axis=0)
         lbd = np.linalg.eigvals(tmp.T.dot(tmp))
