@@ -517,3 +517,36 @@ class GroupSampling:
 
     def get_samples(self):
         return self.samples[self.index]
+
+
+###################################
+
+    def shuffling(self, threshold=0.9):
+        ps = np.array([kde.pdf(self.centers) for kde in self.kdes]).T
+        for i, sample in enumerate(self.centers):
+            p = self.__onehot(ps[i], threshold=threshold)
+            self.labels[i] = np.random.choice(np.arange(self.labels.max() + 1), 1, p=p / p.sum())
+
+        self.__coun()
+        if self.show:
+            self.__draw()
+
+
+    def proposal(self, bw=1.0, adapt=True, rate=0.9, time=0, period=10):
+        a = 1 / self.centers.shape[1] if adapt else 0
+        self.disp('Original KDE:')
+        self.adaptive_kde(bw=bw, a=a)
+        flag = True if self.show else False
+        for i in range(time):
+            if flag:
+                self.show = True if (i + 1) % period == 0 else False
+
+            self.shuffling()
+            self.disp('Shuffled({}) KDE:'.format(i + 1))
+            self.adaptive_kde(bw=bw, a=a)
+
+        self.show = flag
+        self.nonpar_proposal = lambda x: np.sum([p * kde.pdf(x) for p, kde in zip(self.proportions, self.kdes)], axis=0)
+
+
+
