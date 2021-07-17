@@ -12,30 +12,52 @@ from scipy.optimize import minimize
 from scipy.stats import gmean
 
 from sklearn.linear_model import LinearRegression as Linear
-from sklearn.cluster import KMeans
+from sklearn.linear_model import Ridge
+from sklearn.linear_model import Lasso
 from sklearn.preprocessing import StandardScaler
+from sklearn.cluster import KMeans
 
 import warnings
 
 warnings.filterwarnings("ignore")
 
 
-class AdaptiveKDE:
-    def __init__(self, centers, weights, bw, fs, a):
+class KDE:
+    def __init__(self, centers, weights, bw, local, gamma=None, ps=None, a=None):
         self.centers = centers
-        cov = np.cov(centers.T, aweights=weights)
         self.weights = weights / weights.sum()
-        self.neff = 1 / np.sum(self.weights ** 2)
-        scott = self.neff ** (-1 / (centers.shape[1] + 4))
+        self.size, self.d = centers.shape
+        self.local = local
+        if self.local:
+            self.gamma = gamma
+            self.neff = self.gamma * self.size
+            scaler = StandardScaler().fit(self.centers, sample_weight=self.weights)
+            standard_centers = scaler.transform(self.centers)
+            covs = []
+            for i, center in enumerate(standard_centers):
+                index = self.dist(center, standard_centers)
+                cov = np.cov(self.centers[index].T, aweights=weights[index])
+                covs.append(cov)
+
+        else:
+            self.neff = 1 / np.sum(self.weights ** 2)
+            covs = np.cov(centers.T, aweights=weights)
+            self.gm = gmean(ps)
+            self.lambda2s = (ps / self.gm) ** (-2 * a)
+
+        scott = self.neff ** (-1 / (self.d + 4))
         self.factor = bw * scott
-        self.cov = (self.factor ** 2) * cov
-        self.gm = gmean(fs)
-        self.h2s = (fs / self.gm) ** (-2 * a)
+        self.covs = (self.factor ** 2) * np.array(covs)
+
+    def dist(self, x, X):
+        distances = np.sum((x - X) ** 2, axis=1)
+        return np.argsort(distances)[:np.around(self.gamma * self.size).astype(np.int64)]
 
     def pdf(self, samples):
         density = np.zeros(samples.shape[0])
-        for i, loc in enumerate(self.centers):
-            density += self.weights[i] * mvnorm.pdf(x=samples, mean=loc, cov=self.h2s[i] * self.cov)
+        for i, center in enumerate(self.centers):
+            cov = self.covs[i] if self.local else self.lambda2s[i] * self.covs
+            density += self.weights[i] * mvnorm.pdf(x=samples, mean=center, cov=cov)
 
         return density
 
@@ -47,34 +69,30 @@ class AdaptiveKDE:
         cum_sizes = np.append(0, np.cumsum(sizes))
 
         samples = np.zeros([size, self.centers.shape[1]])
-        for i, loc in enumerate(self.centers):
-            samples[cum_sizes[i]:cum_sizes[i + 1]] = mvnorm.rvs(size=sizes[i], mean=loc, cov=self.h2s[i] * self.cov)
+        for i, center in enumerate(self.centers):
+            cov = self.covs[i] if self.local else self.lambda2s[i] * self.covs
+            samples[cum_sizes[i]:cum_sizes[i + 1]] = mvnorm.rvs(size=sizes[i], mean=center, cov=cov)
 
         return samples
 
 
 class MLE:
-    def __init__(self, d, alpha, size_est, show=True):
+    def __init__(self, target, init_proposal, size_est, show=True):
         self.show = show
-        self.Cache = []
+        self.cache = []
         self.result = []
 
-        self.alpha = alpha
-        aVar = np.array([alpha * (1 - alpha), 4 * (alpha * (1 - alpha)) ** 2])
-        self.disp('Reference for a-var (prob) [direct, optimal]: {}'.format(np.round(aVar, 6)))
-
-        self.target = lambda x: norm
-        self.init_proposal = lambda x: t
-        self.init_sampler = lambda size: t
-        self.size = size_est
+        self.target = target.pdf
+        self.init_proposal = init_proposal.pdf
+        self.init_sampler = init_proposal.rvs
+        self.size_est = size_est
+        self.Z = None
 
         self.centers = None
         self.weights = None
-        self.fs = None
-        self.labels = None
+        self.ps = None
 
-        self.proportions = None
-        self.kdes = None
+        self.kde = None
         self.nonpar_proposal = None
         self.nonpar_sampler = None
         self.controls = None
@@ -90,115 +108,55 @@ class MLE:
         if self.show:
             print(text)
         else:
-            self.Cache.append(text)
-
-    @staticmethod
-    def __cumu(x):
-        return x[:, 3:].sum(axis=1)
+            self.cache.append(text)
 
     @staticmethod
     def __divi(p, q):
         q[q == 0] = 1
         return p / q
 
-    def __estimate(self, samples, weights, name, asym=True):
-        x = self.__cumu(samples)
-        self.eVaR = quantile(x, weights, self.alpha)
-        self.result.append(self.eVaR)
+    def __estimate(self, weights, name, asym=True):
+        Z = np.mean(weights)
+        Err = np.abs(Z - 1)
+        self.result.append(Z)
         if asym:
-            w = weights / np.sum(weights)
-            aVar = np.sum((w * (1.0 * (x <= self.eVaR) - self.alpha)) ** 2) * x.size
-            ESS = 1 / np.sum(w ** 2)
-            weighs_fun = weights * (x <= self.eVaR)
-            wf = weighs_fun / np.sum(weighs_fun)
-            ESSf = 1 / np.sum(wf ** 2)
-            self.disp('{} est: {:.4f}; a-var (prob): {:.6f}; ESS: {:.0f}/{}; ESS(f): {:.0f}/{}'
-                      .format(name, self.eVaR, aVar, ESS, x.size, ESSf, x.size))
+            aVar = np.var(weights)
+            aErr = np.sqrt(aVar / weights.size)
+            ESS = 1 / np.sum((weights / np.sum(weights)) ** 2)
+            self.disp('{} est: {:.4f}; err: {:.4f}; a-var: {:.4f}; a-err: {:.4f}; ESS: {:.0f}/{}'
+                      .format(name, Z, Err, aVar, aErr, ESS, weights.size))
         else:
-            self.disp('{} est: {:.4f}'.format(name, self.eVaR))
-
-        if any(weights < 0):
-            weights[weights < 0] = 0
-            self.eVaR = quantile(x, weights, self.alpha)
-            self.disp('(adjusted) {} est: {:.4f}'.format(name, self.eVaR))
+            self.disp('{} est: {:.4f}; err: {:.4f}'.format(name, Z, Err))
 
     def initial_estimation(self):
-        samples = self.init_sampler(self.size)
+        samples = self.init_sampler(self.size_est)
         weights = self.__divi(self.target(samples), self.init_proposal(samples))
-        self.__estimate(samples, weights, 'IS')
+        self.__estimate(weights, 'IS')
 
-    def resampling(self, size, ratio):
-        samples = self.init_sampler(ratio * size)
-        weights = self.__divi(self.target(samples), self.init_proposal(samples))
-        if ratio * size > self.size:
-            self.__estimate(samples, weights, 'IS({})'.format(ratio * size))
+    def resampling(self, size, ratio, resample=True):
+        if resample:
+            samples = self.init_sampler(ratio * size)
+            weights = self.__divi(self.target(samples), self.init_proposal(samples))
+            if ratio * size > self.size_est:
+                self.__estimate(weights, 'IS({})'.format(ratio * size))
 
-        p = weights * np.abs(1.0 * (self.__cumu(samples) <= self.eVaR) - self.alpha)
-        sizes = np.random.multinomial(n=size, pvals=p / p.sum())
+            sizes = np.random.multinomial(n=size, pvals=weights / weights.sum())
 
-        self.centers = samples[sizes != 0]
-        self.weights = sizes[sizes != 0]
-        self.disp('Resampling rate: {}/{}'.format(self.centers.shape[0], size))
-        self.fs = self.target(self.centers) * np.abs(1.0 * (self.__cumu(self.centers) <= self.eVaR) - self.alpha)
-
-    def __coun(self):
-        nums = np.array([[self.weights[self.labels == i].sum(), np.sum(self.labels == i)]
-                         for i in range(self.labels.max() + 1)]).T
-        self.proportions = nums[0] / nums[0].sum()
-        self.disp('Clustering: {}/{}'.format(nums[1], nums[0]))
-
-    def __draw(self):
-        df = pd.DataFrame(self.centers, columns=['phi0', 'phi1', 'beta'] +
-                                                ['y{}'.format(i + 1) for i in range(self.centers.shape[1] - 3)])
-        df['type'] = self.labels
-        sb.pairplot(df, hue='type')
-        plt.show()
-
-    def clustering(self, seed=0, auto=False, num=2):
-        if auto:
-            scaler = StandardScaler().fit(self.centers, sample_weight=self.weights)
-            kmeans = KMeans(n_clusters=num, random_state=seed).fit(scaler.transform(self.centers),
-                                                                   sample_weight=self.weights)
-            self.labels = kmeans.labels_
+            self.centers = samples[sizes != 0]
+            self.weights = sizes[sizes != 0]
+            self.disp('Resampling rate: {}/{}'.format(self.weights.size, size))
         else:
-            index = self.__cumu(self.centers) <= self.eVaR
-            centers1 = self.centers[index]
-            weights1 = self.weights[index]
-            centers2 = self.centers[~index]
-            weights2 = self.weights[~index]
-            scaler1 = StandardScaler().fit(centers1, sample_weight=weights1)
-            scaler2 = StandardScaler().fit(centers2, sample_weight=weights2)
-            kmeans1 = KMeans(n_clusters=num, random_state=seed).fit(scaler1.transform(centers1), sample_weight=weights1)
-            kmeans2 = KMeans(n_clusters=num, random_state=seed).fit(scaler2.transform(centers2), sample_weight=weights2)
-            self.labels = np.ones_like(index, dtype=np.int)
-            self.labels[index] = kmeans1.labels_
-            self.labels[~index] = kmeans2.labels_ + num
+            self.centers = self.init_sampler(size)
+            self.weights = self.__divi(self.target(self.centers), self.init_proposal(self.centers))
 
-        self.__coun()
-        if self.show:
-            self.__draw()
+        self.ps = self.target(self.centers)
+        self.ps /= gmean(self.ps)
 
-    def __groups(self):
-        return [(self.labels == i) for i in range(self.labels.max() + 1)]
-
-    def adaptive_kde(self, bw, a):
-        self.kdes = []
-        for i, labels in enumerate(self.__groups()):
-            self.kdes.append(AdaptiveKDE(self.centers[labels], self.weights[labels], bw=bw, fs=self.fs[labels], a=a))
-            self.disp('KDE {}: {} ({:.4f}, {:.0f})'.format(i + 1, np.round(np.sqrt(np.diag(self.kdes[-1].cov)), 2),
-                                                           self.kdes[-1].factor, self.kdes[-1].neff))
-
-    def proposal(self, bw=1.0, adapt=True, rate=0.9):
-        a = 1 / self.centers.shape[1] if adapt else 0
-        self.adaptive_kde(bw=bw, a=a)
-        self.nonpar_proposal = lambda x: np.sum([p * kde.pdf(x) for p, kde in zip(self.proportions, self.kdes)], axis=0)
-
-        def nonpar_sampler(size):
-            sizes = np.round(size * self.proportions).astype(np.int64)
-            sizes[-1] = size - sizes[:-1].sum()
-            return np.vstack([kde.rvs(sz) for kde, sz in zip(self.kdes, sizes)])
-
-        self.nonpar_sampler = nonpar_sampler
+    def proposal(self, bw=1.0, local=False, gamma=0.1, a=0.5):
+        self.kde = KDE(self.centers, self.weights, bw=bw, local=local, gamma=gamma, ps=self.ps, a=a)
+        self.disp('KDE: (factor {:.4f}, ESS {:.0f})'.format(self.kde.factor, self.kde.neff))
+        self.nonpar_proposal = self.kde.pdf
+        self.nonpar_sampler = self.kde.rvs
 
         def controls(x):
             out = np.zeros([self.centers.shape[0] - 1, x.shape[0]])
