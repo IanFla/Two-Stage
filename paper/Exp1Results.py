@@ -62,3 +62,13 @@
 #            bw=2.7, local=False, gamma=0.1, a=1/2, rate=0.9,
 #            alphaR=1000000.0, alphaL=0.1, stage=2)
 # 1.5513 - 1.9465 - 2.1714
+
+# modified: *************
+# dim = 8
+# mean = np.zeros(dim)
+# target = mvnorm(mean=mean)
+# init_proposal = mvnorm(mean=mean, cov=4)
+# experiment(seed=1234, dim=dim, target=target, init_proposal=init_proposal, size_est=100000,
+#            size=1000, ratio=100, resample=True,
+#            bw=1.4, local=True, gamma=0.3, a=0.0, rate=0.9,
+#            alphaR=1000000.0, alphaL=0.1, stage=2)

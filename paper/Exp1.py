@@ -298,19 +298,15 @@ class MLE:
         plt.show()
 
 
-def experiment(seed, dim, size_est,
+def experiment(seed, dim, target, init_proposal, size_est, x,
                size, ratio, resample,
                bw, local, gamma, a, rate,
                alphaR, alphaL, stage=4):
     np.random.seed(seed)
-    mean = np.zeros(dim)
-    target = mvnorm(mean=mean)
-    init_proposal = mvnorm(mean=mean, cov=4)
     mle = MLE(dim, target, init_proposal, size_est=size_est, show=True)
     if stage >= 1:
         mle.disp('==IS==================================================IS==')
         mle.initial_estimation()
-        x = np.linspace(-4, 4, 101)
         mle.draw(mle.init_proposal, x=x, name='initial')
         mle.resampling(size=size, ratio=ratio, resample=resample)
         if stage >= 2:
@@ -329,7 +325,12 @@ def experiment(seed, dim, size_est,
 
 def main():
     begin = dt.now()
-    experiment(seed=1234, dim=8, size_est=100000,
+    dim = 8
+    mean = np.zeros(dim)
+    target = mvnorm(mean=mean)
+    init_proposal = mvnorm(mean=mean, cov=4)
+    x = np.linspace(-4, 4, 101)
+    experiment(seed=1234, dim=dim, target=target, init_proposal=init_proposal, size_est=100000, x=x,
                size=1000, ratio=100, resample=True,
                bw=1.4, local=True, gamma=0.3, a=0.0, rate=0.9,
                alphaR=1000000.0, alphaL=0.1, stage=2)
