@@ -325,15 +325,35 @@ def experiment(seed, dim, size_est,
 
 def main():
     begin = dt.now()
-    experiment(seed=1234, dim=8, size_est=100000,
-               size=1000, ratio=100, resample=True,
-               bw=1.4, local=False, gamma=0.1, a=0.0, rate=0.9,
-               alphaR=1000000.0, alphaL=0.1)
+    # experiment(seed=1234, dim=8, size_est=100000,
+    #            size=1000, ratio=100, resample=True,
+    #            bw=1.4, local=False, gamma=0.1, a=0.0, rate=0.9,
+    #            alphaR=1000000.0, alphaL=0.1)
 
     # experiment(seed=1234, dim=8, size_est=100000,
     #            size=1000, ratio=100, resample=False,
     #            bw=1.4, local=False, gamma=0.1, a=0.0, rate=0.9,
     #            alphaR=1000000.0, alphaL=0.1)
+
+    # experiment(seed=1234, dim=8, size_est=100000,
+    #            size=1000, ratio=100, resample=True,
+    #            bw=1.8, local=True, gamma=0.3, a=0.0, rate=0.9,
+    #            alphaR=1000000.0, alphaL=0.1)
+
+    # experiment(seed=1234, dim=8, size_est=100000,
+    #            size=1000, ratio=100, resample=True,
+    #            bw=2.0, local=False, gamma=0.1, a=1/8, rate=0.9,
+    #            alphaR=1000000.0, alphaL=0.1)
+
+    # experiment(seed=1234, dim=8, size_est=100000,
+    #            size=1000, ratio=100, resample=True,
+    #            bw=3.6, local=False, gamma=0.1, a=1/2, rate=0.9,
+    #            alphaR=1000000.0, alphaL=0.1)
+
+    experiment(seed=1234, dim=8, size_est=100000,
+               size=1000, ratio=100, resample=True,
+               bw=4.0, local=False, gamma=0.1, a=1 / 2, rate=0.9,
+               alphaR=1000000.0, alphaL=0.1)
 
     end = dt.now()
     print('Total spent: {}s'.format((end - begin).seconds))
