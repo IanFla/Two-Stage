@@ -160,7 +160,10 @@ class MLE:
 
     def proposal(self, bw=1.0, local=False, gamma=0.1, a=0.0, rate=0.9):
         self.kde = KDE(self.centers, self.weights, bw=bw, local=local, gamma=gamma, ps=self.ps, a=a)
-        self.disp('KDE: (factor {:.4f}, ESS {:.0f}/{})'.format(self.kde.factor, self.kde.neff, self.weights.size))
+        covs = self.kde.covs.mean(axis=0) if local else self.kde.covs
+        bdwth = np.mean(np.sqrt(np.diag(covs)))
+        self.disp('KDE: (factor {:.4f}, bdwth: {:.4f}, ESS {:.0f}/{})'
+                  .format(self.kde.factor, bdwth, self.kde.neff, self.weights.size))
         self.nonpar_proposal = self.kde.pdf
         self.nonpar_sampler = self.kde.rvs
         self.mix_proposal = lambda x: (1 - rate) * self.init_proposal(x) + rate * self.nonpar_proposal(x)
@@ -186,7 +189,7 @@ class MLE:
         self.target_ = self.target(self.samples_)
         self.proposal_ = self.mix_proposal(self.samples_)
         self.weights_ = self.__divi(self.target_, self.proposal_)
-        self.__estimate(weights, 'MIS')
+        self.__estimate(self.weights_, 'MIS')
 
     def regression_estimation(self, alphaR, alphaL):
         self.controls_ = self.controls(self.samples_)
@@ -295,23 +298,26 @@ class MLE:
         plt.show()
 
 
-def experiment():
-    dim = 8
+def experiment(seed, dim, size_est,
+               size, ratio, resample,
+               bw, local, gamma, a, rate,
+               alphaR, alphaL):
+    np.random.seed(seed)
     mean = np.zeros(dim)
     target = mvnorm(mean=mean)
-    init_proposal = mvnorm(mean=mean, cov=1)
-    mle = MLE(dim, target, init_proposal, size_est=100000, show=True)
+    init_proposal = mvnorm(mean=mean, cov=4)
+    mle = MLE(dim, target, init_proposal, size_est=size_est, show=True)
     mle.disp('==IS==================================================IS==')
     mle.initial_estimation()
     x = np.linspace(-4, 4, 101)
     mle.draw(mle.init_proposal, x=x, name='initial')
-    mle.resampling(size=1000, ratio=100, resample=True)
+    mle.resampling(size=size, ratio=ratio, resample=resample)
     mle.disp('==NIS================================================NIS==')
-    mle.proposal(bw=1.0, local=False, gamma=0.1, a=0.0, rate=0.9)
+    mle.proposal(bw=bw, local=local, gamma=gamma, a=a, rate=rate)
     mle.nonparametric_estimation()
     mle.draw(mle.nonpar_proposal, x=x, name='nonparametric')
     mle.disp('==RIS================================================RIS==')
-    mle.regression_estimation(alphaR=10000.0, alphaL=0.01)
+    mle.regression_estimation(alphaR=alphaR, alphaL=alphaL)
     mle.draw(mle.mix_proposal, x=x, name='regression')
     mle.disp('==MLE================================================MLE==')
     mle.likelihood_estimation(opt=True, NR=True)
@@ -319,7 +325,16 @@ def experiment():
 
 def main():
     begin = dt.now()
-    experiment()
+    experiment(seed=1234, dim=8, size_est=100000,
+               size=1000, ratio=100, resample=True,
+               bw=1.4, local=False, gamma=0.1, a=0.0, rate=0.9,
+               alphaR=1000000.0, alphaL=0.1)
+
+    # experiment(seed=1234, dim=8, size_est=100000,
+    #            size=1000, ratio=100, resample=False,
+    #            bw=1.4, local=False, gamma=0.1, a=0.0, rate=0.9,
+    #            alphaR=1000000.0, alphaL=0.1)
+
     end = dt.now()
     print('Total spent: {}s'.format((end - begin).seconds))
 

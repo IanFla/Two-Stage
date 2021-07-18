@@ -135,29 +135,42 @@ garch = GARCH(returns)
 garch.laplace(inflate=2, df=1)
 
 
-class AdaptiveKDE:
-    def __init__(self, centers, weights, bw, gamma):
+class KDE:
+    def __init__(self, centers, weights, bw, local, gamma=None, ps=None, a=None):
         self.centers = centers
-        self.gamma = gamma
-        scaler = StandardScaler().fit(self.centers, sample_weight=weights)
-        standard_centers = scaler.transform(self.centers)
-        covs = []
-        for i, center in enumerate(standard_centers):
-            index = self.dist(center, standard_centers)
-            cov = np.cov(self.centers[index].T, fweights=weights[index])
-            covs.append(cov)
-
         self.weights = weights / weights.sum()
-        self.covs = (bw ** 2) * np.array(covs)
+        self.size, self.d = centers.shape
+        self.local = local
+        if self.local:
+            self.gamma = gamma
+            self.neff = self.gamma * self.size
+            scaler = StandardScaler().fit(self.centers, sample_weight=self.weights)
+            standard_centers = scaler.transform(self.centers)
+            covs = []
+            for center in standard_centers:
+                index = self.dist(center, standard_centers)
+                cov = np.cov(self.centers[index].T, aweights=weights[index])
+                covs.append(cov)
+
+        else:
+            self.neff = 1 / np.sum(self.weights ** 2)
+            covs = np.cov(centers.T, aweights=weights)
+            self.gm = gmean(ps)
+            self.lambda2s = (ps / self.gm) ** (-2 * a)
+
+        scott = self.neff ** (-1 / (self.d + 4))
+        self.factor = bw * scott
+        self.covs = (self.factor ** 2) * np.array(covs)
 
     def dist(self, x, X):
         distances = np.sum((x - X) ** 2, axis=1)
-        return np.argsort(distances)[:np.around(self.gamma * self.centers.shape[0]).astype(np.int64)]
+        return np.argsort(distances)[:np.around(self.neff).astype(np.int64)]
 
     def pdf(self, samples):
         density = np.zeros(samples.shape[0])
-        for i, loc in enumerate(self.centers):
-            density += self.weights[i] * mvnorm.pdf(x=samples, mean=loc, cov=self.covs[i])
+        for j, center in enumerate(self.centers):
+            cov = self.covs[j] if self.local else self.lambda2s[j] * self.covs
+            density += self.weights[j] * mvnorm.pdf(x=samples, mean=center, cov=cov)
 
         return density
 
@@ -168,9 +181,10 @@ class AdaptiveKDE:
         sizes[-1] = size - sizes[:-1].sum()
         cum_sizes = np.append(0, np.cumsum(sizes))
 
-        samples = np.zeros([size, self.centers.shape[1]])
-        for i, loc in enumerate(self.centers):
-            samples[cum_sizes[i]:cum_sizes[i + 1]] = mvnorm.rvs(size=sizes[i], mean=loc, cov=self.covs[i])
+        samples = np.zeros([size, self.d])
+        for j, center in enumerate(self.centers):
+            cov = self.covs[j] if self.local else self.lambda2s[j] * self.covs
+            samples[cum_sizes[j]:cum_sizes[j + 1]] = mvnorm.rvs(size=sizes[j], mean=center, cov=cov)
 
         return samples
 
@@ -259,7 +273,7 @@ class MLE:
         self.disp('Resampling rate: {}/{}'.format(self.centers.shape[0], size))
 
     def proposal(self, bw=1.0, rate=0.9, gamma=0.1):
-        kde = AdaptiveKDE(self.centers, self.weights, bw=bw, gamma=gamma)
+        kde = KDE(self.centers, self.weights, local=True, bw=bw, gamma=gamma)
         self.nonpar_proposal = lambda x: kde.pdf(x)
         self.nonpar_sampler = lambda size: kde.rvs(size)
 
@@ -320,7 +334,7 @@ class MLE:
 D = np.array([1, 2, 5])
 Alpha = np.array([0.05, 0.01])
 Truth = np.array([[-1.333, -1.895], [-1.886, -2.771], [-2.996, -4.424]])
-params = [[1500, 0.77], [2000, 0.91], [3000, 0.98]]
+params = [[1500, 1.1], [2000, 1.3], [3000, 1.4]]
 
 
 def experiment(pars, size, bw):
