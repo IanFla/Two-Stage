@@ -301,55 +301,38 @@ class MLE:
 def experiment(seed, dim, size_est,
                size, ratio, resample,
                bw, local, gamma, a, rate,
-               alphaR, alphaL):
+               alphaR, alphaL, stage=4):
     np.random.seed(seed)
     mean = np.zeros(dim)
     target = mvnorm(mean=mean)
     init_proposal = mvnorm(mean=mean, cov=4)
     mle = MLE(dim, target, init_proposal, size_est=size_est, show=True)
-    mle.disp('==IS==================================================IS==')
-    mle.initial_estimation()
-    x = np.linspace(-4, 4, 101)
-    mle.draw(mle.init_proposal, x=x, name='initial')
-    mle.resampling(size=size, ratio=ratio, resample=resample)
-    mle.disp('==NIS================================================NIS==')
-    mle.proposal(bw=bw, local=local, gamma=gamma, a=a, rate=rate)
-    mle.nonparametric_estimation()
-    mle.draw(mle.nonpar_proposal, x=x, name='nonparametric')
-    mle.disp('==RIS================================================RIS==')
-    mle.regression_estimation(alphaR=alphaR, alphaL=alphaL)
-    mle.draw(mle.mix_proposal, x=x, name='regression')
-    mle.disp('==MLE================================================MLE==')
-    mle.likelihood_estimation(opt=True, NR=True)
+    if stage >= 1:
+        mle.disp('==IS==================================================IS==')
+        mle.initial_estimation()
+        x = np.linspace(-4, 4, 101)
+        mle.draw(mle.init_proposal, x=x, name='initial')
+        mle.resampling(size=size, ratio=ratio, resample=resample)
+        if stage >= 2:
+            mle.disp('==NIS================================================NIS==')
+            mle.proposal(bw=bw, local=local, gamma=gamma, a=a, rate=rate)
+            mle.nonparametric_estimation()
+            mle.draw(mle.nonpar_proposal, x=x, name='nonparametric')
+            if stage >= 3:
+                mle.disp('==RIS================================================RIS==')
+                mle.regression_estimation(alphaR=alphaR, alphaL=alphaL)
+                mle.draw(mle.mix_proposal, x=x, name='regression')
+                if stage >= 4:
+                    mle.disp('==MLE================================================MLE==')
+                    mle.likelihood_estimation(opt=True, NR=True)
 
 
 def main():
     begin = dt.now()
-    # experiment(seed=1234, dim=8, size_est=100000,
-    #            size=1000, ratio=100, resample=True,
-    #            bw=1.4, local=False, gamma=0.1, a=0.0, rate=0.9,
-    #            alphaR=1000000.0, alphaL=0.1)
-
-    # experiment(seed=1234, dim=8, size_est=100000,
-    #            size=1000, ratio=100, resample=False,
-    #            bw=1.4, local=False, gamma=0.1, a=0.0, rate=0.9,
-    #            alphaR=1000000.0, alphaL=0.1)
-
-    # experiment(seed=1234, dim=8, size_est=100000,
-    #            size=1000, ratio=100, resample=True,
-    #            bw=1.8, local=True, gamma=0.3, a=0.0, rate=0.9,
-    #            alphaR=1000000.0, alphaL=0.1)
-
-    # experiment(seed=1234, dim=8, size_est=100000,
-    #            size=1000, ratio=100, resample=True,
-    #            bw=2.0, local=False, gamma=0.1, a=1/8, rate=0.9,
-    #            alphaR=1000000.0, alphaL=0.1)
-
-    # experiment(seed=1234, dim=8, size_est=100000,
-    #            size=1000, ratio=100, resample=True,
-    #            bw=5.0, local=False, gamma=0.1, a=1/2, rate=0.9,
-    #            alphaR=1000000.0, alphaL=0.1)
-
+    experiment(seed=1234, dim=8, size_est=100000,
+               size=1000, ratio=100, resample=True,
+               bw=1.4, local=True, gamma=0.3, a=0.0, rate=0.9,
+               alphaR=1000000.0, alphaL=0.1, stage=2)
     end = dt.now()
     print('Total spent: {}s'.format((end - begin).seconds))
 
