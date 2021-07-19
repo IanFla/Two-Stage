@@ -1,6 +1,7 @@
 import numpy as np
 from matplotlib import pyplot as plt
 from datetime import datetime as dt
+from particles import resampling as rs
 
 from scipy.stats import uniform
 from scipy.stats import multivariate_normal as mvnorm
