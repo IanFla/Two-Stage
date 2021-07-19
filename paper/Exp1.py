@@ -3,7 +3,6 @@ from matplotlib import pyplot as plt
 from datetime import datetime as dt
 from particles import resampling as rs
 
-from scipy.stats import uniform
 from scipy.stats import multivariate_normal as mvnorm
 from scipy.optimize import minimize, root
 from scipy.stats import gmean
@@ -14,7 +13,6 @@ from sklearn.linear_model import Lasso
 from sklearn.preprocessing import StandardScaler
 
 import warnings
-
 warnings.filterwarnings("ignore")
 
 
@@ -58,12 +56,8 @@ class KDE:
         return density
 
     def rvs(self, size):
-        sizes = size * self.weights
-        remain = 1 * (uniform.rvs(size=self.weights.size) <= (sizes % 1))
-        sizes = np.int64(sizes) + remain
-        sizes[-1] = size - sizes[:-1].sum()
+        sizes = np.unique(rs.systematic(self.weights, M=size), return_counts=True)[1]
         cum_sizes = np.append(0, np.cumsum(sizes))
-
         samples = np.zeros([size, self.d])
         for j, center in enumerate(self.centers):
             cov = self.covs[j] if self.local else self.lambda2s[j] * self.covs
@@ -333,8 +327,8 @@ def main():
     x = np.linspace(-4, 4, 101)
     experiment(seed=1234, dim=dim, target=target, init_proposal=init_proposal, size_est=100000, x=x,
                size=1000, ratio=100, resample=True,
-               bw=1.4, local=True, gamma=0.3, a=0.0, rate=0.9,
-               alphaR=1000000.0, alphaL=0.1, stage=2)
+               bw=2.0, local=False, gamma=0.3, a=1/dim, rate=0.9,
+               alphaR=1000000.0, alphaL=0.1, stage=4)
     end = dt.now()
     print('Total spent: {}s'.format((end - begin).seconds))
 
