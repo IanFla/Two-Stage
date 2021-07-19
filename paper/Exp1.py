@@ -294,7 +294,7 @@ class MLE:
         else:
             ax.legend(['target', '{} proposal'.format(name)])
 
-        ax.set_title('{}-D target and {} proposal ({}thD slicing)'.format(self.dim, name, dim + 1))
+        ax.set_title('{}-D target and {} proposal ({}th slicing)'.format(self.dim, name, dim + 1))
         plt.show()
 
 
