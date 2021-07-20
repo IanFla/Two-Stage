@@ -1,3 +1,6 @@
+import warnings
+warnings.filterwarnings("ignore")
+
 import numpy as np
 from matplotlib import pyplot as plt
 from datetime import datetime as dt
@@ -11,9 +14,6 @@ from sklearn.linear_model import LinearRegression as Linear
 from sklearn.linear_model import Ridge
 from sklearn.linear_model import Lasso
 from sklearn.preprocessing import StandardScaler
-
-import warnings
-warnings.filterwarnings("ignore")
 
 
 class KDE:
@@ -155,9 +155,9 @@ class MLE:
 
     def proposal(self, bw=1.0, local=False, gamma=0.1, a=0.0, rate=0.9):
         self.kde = KDE(self.centers, self.weights, bw=bw, local=local, gamma=gamma, ps=self.ps, a=a)
-        covs = self.kde.covs.mean(axis=0) if local else self.kde.covs
+        covs = self.kde.covs.mean(axis=0) if local else self.kde.lambda2s.mean() * self.kde.covs
         bdwth = np.mean(np.sqrt(np.diag(covs)))
-        self.disp('KDE: (factor {:.4f}, bdwth: {:.4f}, ESS {:.0f}/{})'
+        self.disp('KDE: (factor {:.4f}, mean bdwth: {:.4f}, ESS {:.0f}/{})'
                   .format(self.kde.factor, bdwth, self.kde.neff, self.weights.size))
         self.nonpar_proposal = self.kde.pdf
         self.nonpar_sampler = self.kde.rvs
@@ -175,9 +175,14 @@ class MLE:
 
         self.controls = controls
 
-    def nonparametric_estimation(self):
+    def nonparametric_estimation(self, Rf=0.0):
         samples = self.nonpar_sampler(self.size_est)
-        weights = self.__divi(self.target(samples), self.nonpar_proposal(samples))
+        target = self.target(samples)
+        proposal = self.nonpar_proposal(samples)
+        ISE = np.mean(proposal - 2 * target) + Rf
+        weights = self.__divi(target, proposal)
+        KLD = np.mean(weights * np.log(weights + 1.0 * (weights == 0)))
+        self.disp('sqrt(ISE/Rf): {:.4f}; KLD: {:.4f}'.format(np.sqrt(ISE/Rf), KLD))
         self.__estimate(weights, 'NIS')
 
         self.samples_ = self.mix_sampler(self.size_est)
@@ -209,6 +214,18 @@ class MLE:
         self.__estimate(weights, 'RIS(Rid)', check=False)
         weights = y - X.dot(self.regL.coef_)
         self.__estimate(weights, 'RIS(Las)', check=False)
+
+        del X, y, weights
+        samples = self.mix_sampler(self.size_est)
+        proposal = self.mix_proposal(samples)
+        y2 = self.__divi(self.target(samples), proposal)
+        X2 = self.__divi(self.controls(samples), proposal).T
+        weights = y2 - X2.dot(self.regO.coef_)
+        self.__estimate(weights, 'RIS(Ord, unbiased)', check=False)
+        weights = y2 - X2.dot(self.regR.coef_)
+        self.__estimate(weights, 'RIS(Rid, unbiased)', check=False)
+        weights = y2 - X2.dot(self.regL.coef_)
+        self.__estimate(weights, 'RIS(Las, unbiased)', check=False)
 
     def likelihood_estimation(self, opt=True, NR=True):
         target = lambda zeta: -np.mean(np.log(self.proposal_ + zeta.dot(self.controls_)))
@@ -307,7 +324,8 @@ def experiment(seed, dim, target, init_proposal, size_est, x,
         if stage >= 2:
             mle.disp('==NIS================================================NIS==')
             mle.proposal(bw=bw, local=local, gamma=gamma, a=a, rate=rate)
-            mle.nonparametric_estimation()
+            Rf = target.pdf(target.rvs(size_est, random_state=seed)).mean()
+            mle.nonparametric_estimation(Rf=Rf)
             mle.draw(mle.nonpar_proposal, x=x, name='nonparametric')
             if stage >= 3:
                 mle.disp('==RIS================================================RIS==')
@@ -325,9 +343,9 @@ def main():
     target = mvnorm(mean=mean)
     init_proposal = mvnorm(mean=mean, cov=4)
     x = np.linspace(-4, 4, 101)
-    experiment(seed=1234, dim=dim, target=target, init_proposal=init_proposal, size_est=100000, x=x,
+    experiment(seed=19971107, dim=dim, target=target, init_proposal=init_proposal, size_est=100000, x=x,
                size=1000, ratio=100, resample=True,
-               bw=2.0, local=False, gamma=0.3, a=1/dim, rate=0.9,
+               bw=1.4, local=False, gamma=0.3, a=0.0, rate=0.9,
                alphaR=1000000.0, alphaL=0.1, stage=4)
     end = dt.now()
     print('Total spent: {}s'.format((end - begin).seconds))
