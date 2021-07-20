@@ -5,6 +5,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from datetime import datetime as dt
 from particles import resampling as rs
+import pickle
 
 from scipy.stats import multivariate_normal as mvnorm
 from scipy.optimize import minimize, root
@@ -119,6 +120,7 @@ class MLE:
             aVar = np.var(weights)
             aErr = np.sqrt(aVar / weights.size)
             ESS = 1 / np.sum((weights / np.sum(weights)) ** 2)
+            self.result.append(aVar)
             self.disp('{} est: {:.4f}; err: {:.4f}; a-var: {:.4f}; a-err: {:.4f}; ESS: {:.0f}/{}'
                       .format(name, Z, Err, aVar, aErr, ESS, weights.size))
         else:
@@ -146,6 +148,7 @@ class MLE:
             self.centers = samples[sizes != 0]
             self.weights = sizes[sizes != 0]
             self.disp('Resampling rate: {}/{}'.format(self.weights.size, size))
+            self.result.append(self.weights.size)
         else:
             self.centers = self.init_sampler(size)
             self.weights = self.__divi(self.target(self.centers), self.init_proposal(self.centers))
@@ -159,6 +162,7 @@ class MLE:
         bdwth = np.mean(np.sqrt(np.diag(covs)))
         self.disp('KDE: (factor {:.4f}, mean bdwth: {:.4f}, ESS {:.0f}/{})'
                   .format(self.kde.factor, bdwth, self.kde.neff, self.weights.size))
+        self.result.extend([bdwth, self.kde.neff])
         self.nonpar_proposal = self.kde.pdf
         self.nonpar_sampler = self.kde.rvs
         self.mix_proposal = lambda x: (1 - rate) * self.init_proposal(x) + rate * self.nonpar_proposal(x)
@@ -183,6 +187,7 @@ class MLE:
         weights = self.__divi(target, proposal)
         KLD = np.mean(weights * np.log(weights + 1.0 * (weights == 0)))
         self.disp('sqrt(ISE/Rf): {:.4f}; KLD: {:.4f}'.format(np.sqrt(ISE/Rf), KLD))
+        self.result.extend([np.sqrt(ISE/Rf), KLD])
         self.__estimate(weights, 'NIS')
 
         self.samples_ = self.mix_sampler(self.size_est)
@@ -200,6 +205,7 @@ class MLE:
         etas = np.sqrt(lbds.max(initial=0) / lbds)
         self.disp('Condition index: (min {:.4f}, median {:.4f}, mean {:.4f}, max {:.4f}, [>30] {}/{})'
                   .format(etas.min(), np.median(etas), etas.mean(), etas.max(), np.sum(etas > 30), etas.size))
+        self.result.extend([etas.mean(), np.sum(etas > 30)])
 
         y = self.weights_
         self.regO = Linear().fit(X, y)
@@ -207,6 +213,7 @@ class MLE:
         self.regL = Lasso(alpha=alphaL).fit(X, y)
         self.disp('Ordinary R2: {:.4f}; Ridge R2: {:.4f}; Lasso R2: {:.4f}'
                   .format(self.regO.score(X, y), self.regR.score(X, y), self.regL.score(X, y)))
+        self.result.extend([self.regO.score(X, y), self.regR.score(X, y), self.regL.score(X, y)])
 
         weights = y - X.dot(self.regO.coef_)
         self.__estimate(weights, 'RIS(Ord)', check=False)
@@ -315,41 +322,72 @@ def experiment(seed, dim, target, init_proposal, size_est, x,
                bw, local, gamma, a, rate,
                alphaR, alphaL, stage=4):
     np.random.seed(seed)
-    mle = MLE(dim, target, init_proposal, size_est=size_est, show=True)
+    mle = MLE(dim, target, init_proposal, size_est=size_est, show=False)
     if stage >= 1:
         mle.disp('==IS==================================================IS==')
         mle.initial_estimation()
-        mle.draw(mle.init_proposal, x=x, name='initial')
+        if mle.show:
+            mle.draw(mle.init_proposal, x=x, name='initial')
+
         mle.resampling(size=size, ratio=ratio, resample=resample)
         if stage >= 2:
             mle.disp('==NIS================================================NIS==')
             mle.proposal(bw=bw, local=local, gamma=gamma, a=a, rate=rate)
             Rf = target.pdf(target.rvs(size_est, random_state=seed)).mean()
             mle.nonparametric_estimation(Rf=Rf)
-            mle.draw(mle.nonpar_proposal, x=x, name='nonparametric')
+            if mle.show:
+                mle.draw(mle.nonpar_proposal, x=x, name='nonparametric')
+
             if stage >= 3:
                 mle.disp('==RIS================================================RIS==')
                 mle.regression_estimation(alphaR=alphaR, alphaL=alphaL)
-                mle.draw(mle.mix_proposal, x=x, name='regression')
+                if mle.show:
+                    mle.draw(mle.mix_proposal, x=x, name='regression')
+
                 if stage >= 4:
                     mle.disp('==MLE================================================MLE==')
                     mle.likelihood_estimation(opt=True, NR=True)
 
+    return mle.result
 
-def main():
+
+Dim = [2, 4, 8]
+Bw = np.linspace(0.6, 2.8, 12)
+A = [-1/4, -1/8, 0.0, 1/8, 1/4, 1/2, 1.0]
+
+
+def run(dim, bw, a):
     begin = dt.now()
-    dim = 8
     mean = np.zeros(dim)
     target = mvnorm(mean=mean)
     init_proposal = mvnorm(mean=mean, cov=4)
-    x = np.linspace(-4, 4, 101)
-    experiment(seed=19971107, dim=dim, target=target, init_proposal=init_proposal, size_est=100000, x=x,
-               size=1000, ratio=100, resample=True,
-               bw=1.4, local=False, gamma=0.3, a=0.0, rate=0.9,
-               alphaR=1000000.0, alphaL=0.1, stage=4)
+    result = experiment(seed=19971107, dim=dim, target=target, init_proposal=init_proposal, size_est=100000, x=None,
+                        size=1000, ratio=100, resample=True,
+                        bw=bw, local=False, gamma=0.3, a=a, rate=0.9,
+                        alphaR=1000000.0, alphaL=0.1, stage=3)
     end = dt.now()
-    print('Total spent: {}s'.format((end - begin).seconds))
+    print('Total spent: {}s (dim {}, bw {}, a {})'.format((end - begin).seconds, dim, bw, a))
+    return result
+
+
+def main(save):
+    res_dim = []
+    for dim in Dim:
+        res_a = []
+        for a in A:
+            res_bw = []
+            for bw in Bw:
+                res_bw.append(run(dim, bw, a))
+
+            res_a.append(res_bw)
+
+        res_dim.append(res_a)
+
+    if save:
+        with open('Ian', 'wb') as file:
+            pickle.dump(res_dim, file)
+            file.close()
 
 
 if __name__ == '__main__':
-    main()
+    main(True)
