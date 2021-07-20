@@ -5,7 +5,6 @@ import numpy as np
 from matplotlib import pyplot as plt
 from datetime import datetime as dt
 from particles import resampling as rs
-import pickle
 
 from scipy.stats import multivariate_normal as mvnorm
 from scipy.optimize import minimize, root
@@ -187,7 +186,7 @@ class MLE:
         weights = self.__divi(target, proposal)
         KLD = np.mean(weights * np.log(weights + 1.0 * (weights == 0)))
         self.disp('sqrt(ISE/Rf): {:.4f}; KLD: {:.4f}'.format(np.sqrt(ISE/Rf), KLD))
-        self.result.extend([np.sqrt(ISE/Rf), KLD])
+        self.result.extend([np.sqrt(ISE / Rf), KLD])
         self.__estimate(weights, 'NIS')
 
         self.samples_ = self.mix_sampler(self.size_est)
@@ -322,72 +321,41 @@ def experiment(seed, dim, target, init_proposal, size_est, x,
                bw, local, gamma, a, rate,
                alphaR, alphaL, stage=4):
     np.random.seed(seed)
-    mle = MLE(dim, target, init_proposal, size_est=size_est, show=False)
+    mle = MLE(dim, target, init_proposal, size_est=size_est, show=True)
     if stage >= 1:
         mle.disp('==IS==================================================IS==')
         mle.initial_estimation()
-        if mle.show:
-            mle.draw(mle.init_proposal, x=x, name='initial')
-
+        mle.draw(mle.init_proposal, x=x, name='initial')
         mle.resampling(size=size, ratio=ratio, resample=resample)
         if stage >= 2:
             mle.disp('==NIS================================================NIS==')
             mle.proposal(bw=bw, local=local, gamma=gamma, a=a, rate=rate)
             Rf = target.pdf(target.rvs(size_est, random_state=seed)).mean()
             mle.nonparametric_estimation(Rf=Rf)
-            if mle.show:
-                mle.draw(mle.nonpar_proposal, x=x, name='nonparametric')
-
+            mle.draw(mle.nonpar_proposal, x=x, name='nonparametric')
             if stage >= 3:
                 mle.disp('==RIS================================================RIS==')
                 mle.regression_estimation(alphaR=alphaR, alphaL=alphaL)
-                if mle.show:
-                    mle.draw(mle.mix_proposal, x=x, name='regression')
-
+                mle.draw(mle.mix_proposal, x=x, name='regression')
                 if stage >= 4:
                     mle.disp('==MLE================================================MLE==')
                     mle.likelihood_estimation(opt=True, NR=True)
 
-    return mle.result
 
-
-Dim = [2, 4, 8]
-Bw = np.linspace(0.6, 2.8, 12)
-A = [-1/4, -1/8, 0.0, 1/8, 1/4, 1/2, 1.0]
-
-
-def run(dim, bw, a):
+def main():
     begin = dt.now()
+    dim = 8
     mean = np.zeros(dim)
     target = mvnorm(mean=mean)
     init_proposal = mvnorm(mean=mean, cov=4)
-    result = experiment(seed=19971107, dim=dim, target=target, init_proposal=init_proposal, size_est=100000, x=None,
-                        size=1000, ratio=100, resample=True,
-                        bw=bw, local=False, gamma=0.3, a=a, rate=0.9,
-                        alphaR=1000000.0, alphaL=0.1, stage=3)
+    x = np.linspace(-4, 4, 101)
+    experiment(seed=19971107, dim=dim, target=target, init_proposal=init_proposal, size_est=100000, x=x,
+               size=1000, ratio=100, resample=True,
+               bw=1.4, local=False, gamma=0.3, a=0.0, rate=0.9,
+               alphaR=1000000.0, alphaL=0.1, stage=4)
     end = dt.now()
-    print('Total spent: {}s (dim {}, bw {}, a {})'.format((end - begin).seconds, dim, bw, a))
-    return result
-
-
-def main(save):
-    res_dim = []
-    for dim in Dim:
-        res_a = []
-        for a in A:
-            res_bw = []
-            for bw in Bw:
-                res_bw.append(run(dim, bw, a))
-
-            res_a.append(res_bw)
-
-        res_dim.append(res_a)
-
-    if save:
-        with open('Ian', 'wb') as file:
-            pickle.dump(res_dim, file)
-            file.close()
+    print('Total spent: {}s'.format((end - begin).seconds))
 
 
 if __name__ == '__main__':
-    main(True)
+    main()
