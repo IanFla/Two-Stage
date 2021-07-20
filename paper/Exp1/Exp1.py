@@ -344,15 +344,15 @@ def experiment(seed, dim, target, init_proposal, size_est, x,
 
 def main():
     begin = dt.now()
-    dim = 8
+    dim = 2
     mean = np.zeros(dim)
     target = mvnorm(mean=mean)
     init_proposal = mvnorm(mean=mean, cov=4)
     x = np.linspace(-4, 4, 101)
     experiment(seed=19971107, dim=dim, target=target, init_proposal=init_proposal, size_est=100000, x=x,
                size=1000, ratio=100, resample=True,
-               bw=1.4, local=False, gamma=0.3, a=0.0, rate=0.9,
-               alphaR=1000000.0, alphaL=0.1, stage=4)
+               bw=0.8, local=False, gamma=0.3, a=1.0, rate=0.9,
+               alphaR=1000000.0, alphaL=0.1, stage=3)
     end = dt.now()
     print('Total spent: {}s'.format((end - begin).seconds))
 

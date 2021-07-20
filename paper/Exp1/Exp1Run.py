@@ -352,7 +352,7 @@ def experiment(seed, dim, target, init_proposal, size_est, x,
 
 
 Dim = [2, 4, 8]
-Bw = np.linspace(0.6, 2.8, 12)
+Bw = np.around(np.linspace(0.6, 2.8, 12), 1)
 A = [-1/4, -1/8, 0.0, 1/8, 1/4, 1/2, 1.0]
 
 
