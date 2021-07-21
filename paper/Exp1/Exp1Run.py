@@ -8,6 +8,7 @@ from particles import resampling as rs
 import pickle
 
 from scipy.stats import multivariate_normal as mvnorm
+from scipy.stats import multivariate_t as mvt
 from scipy.optimize import minimize, root
 from scipy.stats import gmean
 
@@ -18,7 +19,7 @@ from sklearn.preprocessing import StandardScaler
 
 
 class KDE:
-    def __init__(self, centers, weights, bw, local, gamma=None, ps=None, a=None):
+    def __init__(self, centers, weights, bw, local, gamma=None, ps=None, a=None, kdf=0):
         self.centers = centers
         self.weights = weights / weights.sum()
         self.size, self.d = centers.shape
@@ -43,6 +44,12 @@ class KDE:
         scott = self.neff ** (-1 / (self.d + 4))
         self.factor = bw * scott
         self.covs = (self.factor ** 2) * np.array(covs)
+        if kdf < 3:
+            self.kernel_pdf = lambda x, m, v: mvnorm.pdf(x=x, mean=m, cov=v)
+            self.kernel_rvs = lambda size, m, v: mvnorm.rvs(size=size, mean=m, cov=v)
+        elif kdf >= 3:
+            self.kernel_pdf = lambda x, m, v: mvt.pdf(x=x, loc=m, shape=(kdf-2)*v/kdf, df=kdf)
+            self.kernel_rvs = lambda size, m, v: mvt.rvs(size=size, loc=m, shape=(kdf-2)*v/kdf, df=kdf)
 
     def dist(self, x, X):
         distances = np.sum((x - X) ** 2, axis=1)
@@ -52,7 +59,7 @@ class KDE:
         density = np.zeros(samples.shape[0])
         for j, center in enumerate(self.centers):
             cov = self.covs[j] if self.local else self.lambda2s[j] * self.covs
-            density += self.weights[j] * mvnorm.pdf(x=samples, mean=center, cov=cov)
+            density += self.weights[j] * self.kernel_pdf(x=samples, m=center, v=cov)
 
         return density
 
@@ -62,7 +69,7 @@ class KDE:
         samples = np.zeros([size, self.d])
         for j, center in enumerate(self.centers):
             cov = self.covs[j] if self.local else self.lambda2s[j] * self.covs
-            samples[cum_sizes[j]:cum_sizes[j + 1]] = mvnorm.rvs(size=sizes[j], mean=center, cov=cov)
+            samples[cum_sizes[j]:cum_sizes[j + 1]] = self.kernel_rvs(size=sizes[j], m=center, v=cov)
 
         return samples
 
@@ -144,7 +151,7 @@ class MLE:
             if ratio * size > self.size_est:
                 self.__estimate(weights, 'IS({})'.format(ratio * size))
 
-            sizes = np.random.multinomial(n=size, pvals=weights / weights.sum())
+            sizes = np.unique(rs.systematic(weights / weights.sum(), M=size), return_counts=True)[1]
             self.centers = samples[sizes != 0]
             self.weights = sizes[sizes != 0]
             self.disp('Resampling rate: {}/{}'.format(self.weights.size, size))
@@ -156,13 +163,13 @@ class MLE:
         self.ps = self.target(self.centers)
         self.ps /= gmean(self.ps)
 
-    def proposal(self, bw=1.0, local=False, gamma=0.1, a=0.0, rate=0.9):
-        self.kde = KDE(self.centers, self.weights, bw=bw, local=local, gamma=gamma, ps=self.ps, a=a)
+    def proposal(self, bw=1.0, local=False, gamma=0.1, a=0.0, rate=0.9, kdf=0):
+        self.kde = KDE(self.centers, self.weights, bw=bw, local=local, gamma=gamma, ps=self.ps, a=a, kdf=kdf)
         covs = self.kde.covs.mean(axis=0) if local else self.kde.lambda2s.mean() * self.kde.covs
-        bdwth = np.mean(np.sqrt(np.diag(covs)))
+        bdwth = np.sqrt(np.diag(covs))
         self.disp('KDE: (factor {:.4f}, mean bdwth: {:.4f}, ESS {:.0f}/{})'
-                  .format(self.kde.factor, bdwth, self.kde.neff, self.weights.size))
-        self.result.extend([bdwth, self.kde.neff])
+                  .format(self.kde.factor, np.mean(bdwth), self.kde.neff, self.weights.size))
+        self.result.extend([np.mean(bdwth), self.kde.neff])
         self.nonpar_proposal = self.kde.pdf
         self.nonpar_sampler = self.kde.rvs
         self.mix_proposal = lambda x: (1 - rate) * self.init_proposal(x) + rate * self.nonpar_proposal(x)
@@ -187,7 +194,7 @@ class MLE:
         weights = self.__divi(target, proposal)
         KLD = np.mean(weights * np.log(weights + 1.0 * (weights == 0)))
         self.disp('sqrt(ISE/Rf): {:.4f}; KLD: {:.4f}'.format(np.sqrt(ISE/Rf), KLD))
-        self.result.extend([np.sqrt(ISE/Rf), KLD])
+        self.result.extend([np.sqrt(ISE / Rf), KLD])
         self.__estimate(weights, 'NIS')
 
         self.samples_ = self.mix_sampler(self.size_est)
@@ -205,7 +212,7 @@ class MLE:
         etas = np.sqrt(lbds.max(initial=0) / lbds)
         self.disp('Condition index: (min {:.4f}, median {:.4f}, mean {:.4f}, max {:.4f}, [>30] {}/{})'
                   .format(etas.min(), np.median(etas), etas.mean(), etas.max(), np.sum(etas > 30), etas.size))
-        self.result.extend([etas.mean(), np.sum(etas > 30)])
+        self.result.append(np.sum(etas > 30))
 
         y = self.weights_
         self.regO = Linear().fit(X, y)
@@ -319,10 +326,10 @@ class MLE:
 
 def experiment(seed, dim, target, init_proposal, size_est, x,
                size, ratio, resample,
-               bw, local, gamma, a, rate,
-               alphaR, alphaL, stage=4):
+               bw, local, gamma, a, rate, kdf,
+               alphaR, alphaL, stage=4, show=True):
     np.random.seed(seed)
-    mle = MLE(dim, target, init_proposal, size_est=size_est, show=False)
+    mle = MLE(dim, target, init_proposal, size_est=size_est, show=show)
     if stage >= 1:
         mle.disp('==IS==================================================IS==')
         mle.initial_estimation()
@@ -332,7 +339,7 @@ def experiment(seed, dim, target, init_proposal, size_est, x,
         mle.resampling(size=size, ratio=ratio, resample=resample)
         if stage >= 2:
             mle.disp('==NIS================================================NIS==')
-            mle.proposal(bw=bw, local=local, gamma=gamma, a=a, rate=rate)
+            mle.proposal(bw=bw, local=local, gamma=gamma, a=a, rate=rate, kdf=kdf)
             Rf = target.pdf(target.rvs(size_est, random_state=seed)).mean()
             mle.nonparametric_estimation(Rf=Rf)
             if mle.show:
@@ -351,23 +358,24 @@ def experiment(seed, dim, target, init_proposal, size_est, x,
     return mle.result
 
 
-Dim = [2, 4, 8]
-Bw = np.around(np.linspace(0.6, 2.8, 12), 1)
-A = [-1/4, -1/8, 0.0, 1/8, 1/4, 1/2, 1.0]
-
-
-def run(dim, bw, a):
+def run(dim, bw, a, local=False, gamma=0.3, kdf=0):
     begin = dt.now()
     mean = np.zeros(dim)
-    target = mvnorm(mean=mean)
-    init_proposal = mvnorm(mean=mean, cov=4)
-    result = experiment(seed=19971107, dim=dim, target=target, init_proposal=init_proposal, size_est=100000, x=None,
-                        size=1000, ratio=100, resample=True,
-                        bw=bw, local=False, gamma=0.3, a=a, rate=0.9,
-                        alphaR=1000000.0, alphaL=0.1, stage=3)
+    target = mvt(loc=mean, df=4)
+    init_proposal = mvt(loc=mean, shape=4)
+    x = np.linspace(-4, 4, 101)
+    result = experiment(seed=19971107, dim=dim, target=target, init_proposal=init_proposal, size_est=100000, x=x,
+                        size=500, ratio=100, resample=True,
+                        bw=bw, local=local, gamma=gamma, a=a, rate=0.9, kdf=kdf,
+                        alphaR=1000000.0, alphaL=0.1, stage=3, show=True)
     end = dt.now()
     print('Total spent: {}s (dim {}, bw {}, a {})'.format((end - begin).seconds, dim, bw, a))
     return result
+
+
+Dim = [2, 4, 8]
+Bw = np.around(np.linspace(0.6, 2.8, 12), 1)
+A = [-1/4, -1/8, 0.0, 1/8, 1/4, 1/2, 1.0]
 
 
 def main(save):
@@ -384,7 +392,7 @@ def main(save):
         res_dim.append(res_a)
 
     if save:
-        with open('Ian2', 'wb') as file:
+        with open('Ian', 'wb') as file:
             pickle.dump(res_dim, file)
             file.close()
 

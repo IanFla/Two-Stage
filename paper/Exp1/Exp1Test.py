@@ -42,13 +42,13 @@ def draw(dim, name, log=False):
 
 
 if __name__ == '__main__':
-    file = open('Ian', 'rb')
+    file = open('IanN', 'rb')
     Data = pickle.load(file)
     dimension = 8
     draw(Dim.index(dimension), 'mean bdwth', log=True)
     draw(Dim.index(dimension), 'CI>30')
-    draw(Dim.index(dimension), 'sqrt(ISE/Rf)', log=True)  # 0.5, 1.2 / 0.25, 1.2 / 0.125, 1.4
-    draw(Dim.index(dimension), 'KLD')  # 0.25, 0.8 / 0.125, 1.2 / 0, 1.2
-    draw(Dim.index(dimension), 'NIS a-var', log=True)  # 0.25, 1 / 0.125, 1.2 / 0.125, 1.4
-    draw(Dim.index(dimension), 'MIS a-var', log=True)  # 0.25, 0.8 / 0.125, 1.2 / 0.125, 1.4
-    draw(Dim.index(dimension), 'RIS(O) a-var', log=True)  # 0, 2.8 / 0, 2.2 / 0, 1.4
+    draw(Dim.index(dimension), 'sqrt(ISE/Rf)', log=True)
+    draw(Dim.index(dimension), 'KLD')
+    draw(Dim.index(dimension), 'NIS a-var', log=True)
+    draw(Dim.index(dimension), 'MIS a-var', log=True)
+    draw(Dim.index(dimension), 'RIS(O) a-var', log=True)
