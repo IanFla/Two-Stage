@@ -29,8 +29,8 @@ def draw(dim, name, log=False):
         name = 'log(' + name + ')'
 
     df = pd.DataFrame(matrix, index=A, columns=Bw)
-    f, ax = plt.subplots(figsize=(14, 7))
-    sb.heatmap(df, annot=True, linewidths=0.5, ax=ax)
+    f, ax = plt.subplots(figsize=(len(Bw), len(A)))
+    sb.heatmap(df, annot=True, linewidths=0.5, cbar=False, ax=ax)
     ax.set_xlabel('h')
     ax.set_ylabel('a')
     maxi, maxj = np.unravel_index(np.argmax(matrix, axis=None), matrix.shape)
@@ -48,7 +48,7 @@ if __name__ == '__main__':
     draw(Dim.index(dimension), 'mean bdwth', log=True)
     draw(Dim.index(dimension), 'CI>30')
     draw(Dim.index(dimension), 'sqrt(ISE/Rf)', log=True)
-    draw(Dim.index(dimension), 'KLD')
+    draw(Dim.index(dimension), 'KLD', log=True)
     draw(Dim.index(dimension), 'NIS a-var', log=True)
     draw(Dim.index(dimension), 'MIS a-var', log=True)
     draw(Dim.index(dimension), 'RIS(O) a-var', log=True)

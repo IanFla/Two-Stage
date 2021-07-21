@@ -361,7 +361,7 @@ def experiment(seed, dim, target, init_proposal, size_est, x,
 def run(dim, bw, a, local=False, gamma=0.3, kdf=0):
     begin = dt.now()
     mean = np.zeros(dim)
-    target = mvt(loc=mean, df=4)
+    target = mvt(loc=mean, df=4, shape=0.5)
     init_proposal = mvt(loc=mean, shape=4)
     x = np.linspace(-4, 4, 101)
     result = experiment(seed=19971107, dim=dim, target=target, init_proposal=init_proposal, size_est=100000, x=x,
