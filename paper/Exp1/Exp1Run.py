@@ -151,7 +151,8 @@ class MLE:
             if ratio * size > self.size_est:
                 self.__estimate(weights, 'IS({})'.format(ratio * size))
 
-            sizes = np.unique(rs.systematic(weights / weights.sum(), M=size), return_counts=True)[1]
+            # sizes = np.unique(rs.systematic(weights / weights.sum(), M=size), return_counts=True)[1]
+            sizes = np.random.multinomial(size, weights/weights.sum())
             self.centers = samples[sizes != 0]
             self.weights = sizes[sizes != 0]
             self.disp('Resampling rate: {}/{}'.format(self.weights.size, size))
@@ -378,24 +379,28 @@ Bw = np.around(np.linspace(0.6, 2.8, 12), 1)
 A = [-1/4, -1/8, 0.0, 1/8, 1/4, 1/2, 1.0]
 
 
-def main(save):
-    res_dim = []
-    for dim in Dim:
-        res_a = []
-        for a in A:
-            res_bw = []
-            for bw in Bw:
-                res_bw.append(run(dim, bw, a))
+# def main(save):
+#     res_dim = []
+#     for dim in Dim:
+#         res_a = []
+#         for a in A:
+#             res_bw = []
+#             for bw in Bw:
+#                 res_bw.append(run(dim, bw, a))
+#
+#             res_a.append(res_bw)
+#
+#         res_dim.append(res_a)
+#
+#     if save:
+#         with open('Ian', 'wb') as file:
+#             pickle.dump(res_dim, file)
+#             file.close()
 
-            res_a.append(res_bw)
 
-        res_dim.append(res_a)
-
-    if save:
-        with open('Ian', 'wb') as file:
-            pickle.dump(res_dim, file)
-            file.close()
+def main():
+    return run(dim=7, bw=3.0, a=0.0, local=True, gamma=0.3, kdf=0)
 
 
 if __name__ == '__main__':
-    main(True)
+    main()

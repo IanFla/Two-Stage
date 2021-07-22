@@ -11,11 +11,11 @@ from scipy.stats import multivariate_normal as mvnorm
 from scipy.stats import multivariate_t as mvt
 from scipy.optimize import minimize, root
 from scipy.stats import gmean
+from scipy.spatial.distance import mahalanobis
 
 from sklearn.linear_model import LinearRegression as Linear
 from sklearn.linear_model import Ridge
 from sklearn.linear_model import Lasso
-from sklearn.preprocessing import StandardScaler
 
 
 class KDE:
@@ -27,11 +27,18 @@ class KDE:
         if self.local:
             self.gamma = gamma
             self.neff = self.gamma * self.size
-            scaler = StandardScaler().fit(self.centers, sample_weight=self.weights)
-            standard_centers = scaler.transform(self.centers)
             covs = []
-            for center in standard_centers:
-                index = self.dist(center, standard_centers)
+            icov = np.linalg.inv(np.cov(self.centers.T, aweights=weights))
+            distances = []
+            for x1 in self.centers:
+                dists = []
+                for x2 in self.centers:
+                    dists.append(mahalanobis(x1, x2, icov))
+
+                distances.append(dists)
+
+            for j, center in enumerate(self.centers):
+                index = np.argsort(distances[j])[:np.around(self.neff).astype(np.int64)]
                 cov = np.cov(self.centers[index].T, aweights=weights[index])
                 covs.append(cov)
 
@@ -50,10 +57,6 @@ class KDE:
         elif kdf >= 3:
             self.kernel_pdf = lambda x, m, v: mvt.pdf(x=x, loc=m, shape=(kdf-2)*v/kdf, df=kdf)
             self.kernel_rvs = lambda size, m, v: mvt.rvs(size=size, loc=m, shape=(kdf-2)*v/kdf, df=kdf)
-
-    def dist(self, x, X):
-        distances = np.sum((x - X) ** 2, axis=1)
-        return np.argsort(distances)[:np.around(self.neff).astype(np.int64)]
 
     def pdf(self, samples):
         density = np.zeros(samples.shape[0])
@@ -151,9 +154,9 @@ class MLE:
             if ratio * size > self.size_est:
                 self.__estimate(weights, 'IS({})'.format(ratio * size))
 
-            sizes = np.unique(rs.systematic(weights / weights.sum(), M=size), return_counts=True)[1]
-            self.centers = samples[sizes != 0]
-            self.weights = sizes[sizes != 0]
+            index, sizes = np.unique(rs.systematic(weights / weights.sum(), M=size), return_counts=True)
+            self.centers = samples[index]
+            self.weights = sizes / np.mean(sizes)
             self.disp('Resampling rate: {}/{}'.format(self.weights.size, size))
             self.result.append(self.weights.size)
         else:
@@ -369,12 +372,12 @@ def run(dim, bw, a, local=False, gamma=0.3, kdf=0):
                         bw=bw, local=local, gamma=gamma, a=a, rate=0.9, kdf=kdf,
                         alphaR=1000000.0, alphaL=0.1, stage=3, show=True)
     end = dt.now()
-    print('Total spent: {}s (dim {}, bw {}, a {})'.format((end - begin).seconds, dim, bw, a))
+    print('Total spent: {}s (dim {}, bw {:.2f}, a {:.2f})'.format((end - begin).seconds, dim, bw, a))
     return result
 
 
 def main():
-    return run(dim=2, bw=1.0, a=0.0, local=False, gamma=0.3, kdf=0)
+    return run(dim=7, bw=3.0, a=0.0, local=True, gamma=0.3, kdf=0)
 
 
 if __name__ == '__main__':
