@@ -18,7 +18,7 @@ warnings.filterwarnings("ignore")
 
 
 class KDE:
-    def __init__(self, centers, weights, bw, local, gamma=None, ps=None, a=0.0, kdf=0):
+    def __init__(self, centers, weights, bw, factor='scott', local=False, gamma=None, ps=None, a=0.0, kdf=0):
         self.centers = centers
         self.weights = weights / weights.sum()
         self.size, self.d = centers.shape
@@ -26,7 +26,6 @@ class KDE:
         if self.local:
             self.gamma = gamma
             self.neff = self.gamma * self.size
-            covs = []
             icov = np.linalg.inv(np.cov(self.centers.T, aweights=weights))
             distances = []
             for x1 in self.centers:
@@ -36,19 +35,23 @@ class KDE:
 
                 distances.append(dists)
 
+            covs = []
             for j, center in enumerate(self.centers):
                 index = np.argsort(distances[j])[:np.around(self.neff).astype(np.int64)]
-                cov = np.cov(self.centers[index].T, aweights=weights[index])
-                covs.append(cov)
+                covs.append(np.cov(self.centers[index].T, aweights=weights[index]))
 
         else:
             self.neff = 1 / np.sum(self.weights ** 2)
             covs = np.cov(centers.T, aweights=weights)
+            if ps is None:
+                ps = np.ones(self.size)
+
             self.gm = gmean(ps)
             self.lambda2s = (ps / self.gm) ** (-2 * a)
 
         scott = self.neff ** (-1 / (self.d + 4))
-        self.factor = bw * scott
+        silverman = scott * ((4 / (self.d + 2)) ** (1 / (self.d + 4)))
+        self.factor = bw * scott if factor == 'scott' else bw * silverman
         self.covs = (self.factor ** 2) * np.array(covs)
         if kdf < 3:
             self.kernel_pdf = lambda x, m, v: mvnorm.pdf(x=x, mean=m, cov=v)
@@ -87,11 +90,9 @@ class MLE:
         self.init_proposal = init_proposal.pdf
         self.init_sampler = init_proposal.rvs
         self.size_est = size_est
-        self.Z = None
 
         self.centers = None
         self.weights = None
-        self.ps = None
 
         self.kde = None
         self.nonpar_proposal = None
@@ -123,13 +124,13 @@ class MLE:
 
     def __estimate(self, weights, name, asym=True, check=True):
         Z = np.mean(weights)
-        Err = np.abs(Z - 1)
         self.result.append(Z)
+        Err = np.abs(Z - 1)
         if asym:
             aVar = np.var(weights)
+            self.result.append(aVar)
             aErr = np.sqrt(aVar / weights.size)
             ESS = 1 / np.sum((weights / np.sum(weights)) ** 2)
-            self.result.append(aVar)
             self.disp('{} est: {:.4f}; err: {:.4f}; a-var: {:.4f}; a-err: {:.4f}; ESS: {:.0f}/{}'
                       .format(name, Z, Err, aVar, aErr, ESS, weights.size))
         else:
@@ -139,56 +140,55 @@ class MLE:
             weights[weights < 0] = 0
             Z = np.mean(weights)
             Err = np.abs(Z - 1)
-            print('{} est (Adjusted): {:.4f}; err: {:.4f}'.format(name, Z, Err))
+            self.disp('{} est (Adjusted): {:.4f}; err: {:.4f}'.format(name, Z, Err))
 
     def initial_estimation(self):
         samples = self.init_sampler(self.size_est)
         weights = self.__divi(self.target(samples), self.init_proposal(samples))
         self.__estimate(weights, 'IS')
 
+        ESS = 1 / np.sum((weights / weights.sum()) ** 2)
+        RSS = weights.sum() / weights.max()
+        self.disp('Ratio reference: n0/ESS {:.0f} ~ n0/RSS {:.0f}'.format(self.size_est / ESS, self.size_est / RSS))
+        self.result.extend([self.size_est / ESS, self.size_est / RSS])
+
     def resampling(self, size, ratio, resample=True):
         if resample:
             samples = self.init_sampler(ratio * size)
             weights = self.__divi(self.target(samples), self.init_proposal(samples))
-            if ratio * size > self.size_est:
-                self.__estimate(weights, 'IS({})'.format(ratio * size))
-
             index, sizes = np.unique(rs.systematic(weights / weights.sum(), M=size), return_counts=True)
             self.centers = samples[index]
-            self.weights = sizes / np.mean(sizes)
+            self.weights = sizes
             self.disp('Resampling rate: {}/{}'.format(self.weights.size, size))
             self.result.append(self.weights.size)
         else:
             self.centers = self.init_sampler(size)
             self.weights = self.__divi(self.target(self.centers), self.init_proposal(self.centers))
 
-        self.ps = self.target(self.centers)
-        self.ps /= gmean(self.ps)
-
-    def proposal(self, bw=1.0, local=False, gamma=0.1, a=0.0, rate=0.9, kdf=0):
-        self.kde = KDE(self.centers, self.weights, bw=bw, local=local, gamma=gamma, ps=self.ps, a=a, kdf=kdf)
+    def proposal(self, bw=1.0, factor='scott', local=False, gamma=0.3, alpha0=0.1):
+        self.kde = KDE(self.centers, self.weights, bw=bw, factor=factor, local=local, gamma=gamma)
         covs = self.kde.covs.mean(axis=0) if local else self.kde.lambda2s.mean() * self.kde.covs
-        bdwth = np.sqrt(np.diag(covs))
-        self.disp('KDE: (factor {:.4f}, mean bdwth: {:.4f}, ESS {:.0f}/{})'
-                  .format(self.kde.factor, np.mean(bdwth), self.kde.neff, self.weights.size))
-        self.result.extend([np.mean(bdwth), self.kde.neff])
+        bdwths = np.sqrt(np.diag(covs))
+        self.disp('KDE: (mean bdwth: {:.4f}, factor {:.4f}, ESS {:.0f}/{})'
+                  .format(np.mean(bdwths), self.kde.factor, self.kde.neff, self.kde.size))
+        self.result.extend([np.mean(bdwths), self.kde.neff])
         self.nonpar_proposal = self.kde.pdf
         self.nonpar_sampler = self.kde.rvs
-        self.mix_proposal = lambda x: (1 - rate) * self.init_proposal(x) + rate * self.nonpar_proposal(x)
-        self.mix_sampler = lambda size: np.vstack([self.init_sampler(size - round(rate * size)),
-                                                   self.nonpar_sampler(round(rate * size))])
+        self.mix_proposal = lambda x: alpha0 * self.init_proposal(x) + (1 - alpha0) * self.nonpar_proposal(x)
+        self.mix_sampler = lambda size: np.vstack([self.init_sampler(round(alpha0 * size)),
+                                                   self.nonpar_sampler(size - round(alpha0 * size))])
 
         def controls(x):
             out = np.zeros([self.centers.shape[0], x.shape[0]])
             for j, center in enumerate(self.centers):
                 cov = self.kde.covs[j] if local else self.kde.lambda2s[j] * self.kde.covs
-                out[j] = mvnorm.pdf(x=x, mean=center, cov=cov)
+                out[j] = self.kde.kernel_pdf(x=x, m=center, v=cov)
 
-            return np.array(out) - self.mix_proposal(x)
+            return out - self.mix_proposal(x)
 
         self.controls = controls
 
-    def nonparametric_estimation(self, Rf=0.0):
+    def nonparametric_estimation(self, Rf=1.0):
         samples = self.nonpar_sampler(self.size_est)
         target = self.target(samples)
         proposal = self.nonpar_proposal(samples)
@@ -254,7 +254,7 @@ class MLE:
         self.disp('Origin: value: {:.4f}; grad: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f})'
                   .format(target(zeta0), grad0.min(), grad0.mean(), grad0.max(), grad0.std()))
 
-        print()
+        self.disp('')
         self.disp('Theoretical results:')
         X = (self.__divi(self.controls_, self.proposal_)).T
         zeta1 = np.linalg.solve(np.cov(X.T, bias=True), X.mean(axis=0))
@@ -284,7 +284,7 @@ class MLE:
                                options={'ftol': 1e-8, 'maxiter': 1000})
 
             end = dt.now()
-            print()
+            self.disp('')
             self.disp('Optimization results (spent {} seconds):'.format((end - begin).seconds))
             if res['success']:
                 zeta2 = res['x']
@@ -326,10 +326,12 @@ class MLE:
         plt.show()
 
 
-def experiment(seed, dim, target, init_proposal, size_est, x,
+def experiment(seed, dim, target,
+               init_proposal, size_est, x,
                size, ratio, resample,
-               bw, local, gamma, a, rate, kdf,
-               alphaR, alphaL, stage=4, show=True):
+               bw, factor, local, gamma, alpha0,
+               alphaR, alphaL,
+               stage=4, show=True):
     np.random.seed(seed)
     mle = MLE(dim, target, init_proposal, size_est=size_est, show=show)
     if stage >= 1:
@@ -341,8 +343,8 @@ def experiment(seed, dim, target, init_proposal, size_est, x,
         mle.resampling(size=size, ratio=ratio, resample=resample)
         if stage >= 2:
             mle.disp('==NIS================================================NIS==')
-            mle.proposal(bw=bw, local=local, gamma=gamma, a=a, rate=rate, kdf=kdf)
-            Rf = target.pdf(target.rvs(size_est, random_state=seed)).mean()
+            mle.proposal(bw=bw, factor=factor, local=local, gamma=gamma, alpha0=alpha0)
+            Rf = target.pdf(target.rvs(size=size_est, random_state=seed)).mean()
             mle.nonparametric_estimation(Rf=Rf)
             if mle.show:
                 mle.draw(mle.nonpar_proposal, x=x, name='nonparametric')
@@ -360,23 +362,27 @@ def experiment(seed, dim, target, init_proposal, size_est, x,
     return mle.result
 
 
-def run(dim, bw, a, local=False, gamma=0.3, kdf=0):
+def run(dim, bw, factor, local, gamma):
     begin = dt.now()
     mean = np.zeros(dim)
-    target = mvt(loc=mean, df=4, shape=0.5)
-    init_proposal = mvt(loc=mean, shape=4)
+    target = mvnorm(mean=mean)
+    init_proposal = mvnorm(mean=mean, cov=4)
     x = np.linspace(-4, 4, 101)
-    result = experiment(seed=19971107, dim=dim, target=target, init_proposal=init_proposal, size_est=100000, x=x,
-                        size=500, ratio=100, resample=True,
-                        bw=bw, local=local, gamma=gamma, a=a, rate=0.9, kdf=kdf,
-                        alphaR=1000000.0, alphaL=0.1, stage=3, show=True)
+    result = experiment(seed=19971107, dim=dim, target=target,
+                        init_proposal=init_proposal, size_est=100000, x=x,
+                        size=1000, ratio=20, resample=True,
+                        bw=bw, factor=factor, local=local, gamma=gamma, alpha0=0.1,
+                        alphaR=1000000.0, alphaL=0.1,
+                        stage=3, show=True)
     end = dt.now()
-    print('Total spent: {}s (dim {}, bw {:.2f}, a {:.2f})'.format((end - begin).seconds, dim, bw, a))
+    print('Total spent: {}s (dim {}, bw {:.2f} ({}), gamma {:.2f})'
+          .format((end - begin).seconds, dim, bw, factor, gamma))
     return result
 
 
 def main():
-    return run(dim=7, bw=3.0, a=0.0, local=True, gamma=0.3, kdf=0)
+    res = [run(dim=8, bw=1.0, factor='scott', local=False, gamma=1.0)]
+    return res
 
 
 if __name__ == '__main__':
