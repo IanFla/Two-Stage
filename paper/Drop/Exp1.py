@@ -1,7 +1,11 @@
+import warnings
+warnings.filterwarnings("ignore")
+
 import numpy as np
 from matplotlib import pyplot as plt
 from datetime import datetime as dt
 from particles import resampling as rs
+# import pickle
 
 from scipy.stats import multivariate_normal as mvnorm
 from scipy.stats import multivariate_t as mvt
@@ -12,9 +16,6 @@ from scipy.spatial.distance import mahalanobis
 from sklearn.linear_model import LinearRegression as Linear
 from sklearn.linear_model import Ridge
 from sklearn.linear_model import Lasso
-
-import warnings
-warnings.filterwarnings("ignore")
 
 
 class KDE:
