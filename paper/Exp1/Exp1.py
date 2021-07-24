@@ -333,7 +333,7 @@ def experiment(seed, dim, target,
                size, ratio, resample,
                bw, factor, local, gamma, alpha0,
                alphaR, alphaL,
-               stage=4, show=True):
+               stage=4, show=False):
     np.random.seed(seed)
     mle = MLE(dim, target, init_proposal, size_est=size_est, show=show)
     if stage >= 1:
@@ -364,22 +364,22 @@ def experiment(seed, dim, target,
     return mle.result
 
 
-def run(dim, gamma, bw):
+def run(inputs):
     begin = dt.now()
-    mean = np.zeros(dim)
+    mean = np.zeros(inputs[0])
     target = mvnorm(mean=mean)
     init_proposal = mvnorm(mean=mean, cov=4)
     x = np.linspace(-4, 4, 101)
-    result = experiment(seed=19971107, dim=dim, target=target,
+    result = experiment(seed=19971107, dim=inputs[0], target=target,
                         init_proposal=init_proposal, size_est=100000, x=x,
                         size=500, ratio=100, resample=True,
-                        bw=bw, factor='scott', local=True, gamma=gamma, alpha0=0.1,
+                        bw=inputs[2], factor='scott', local=True, gamma=inputs[1], alpha0=0.1,
                         alphaR=1000000.0, alphaL=0.1,
-                        stage=4, show=True)
+                        stage=3, show=False)
     end = dt.now()
-    print('Total spent: {}s (dim {}, bw {:.2f}, gamma {:.2f})'
-          .format((end - begin).seconds, dim, bw, gamma))
-    return [dim, gamma, bw] + result
+    print('Total spent: {}s (dim {}, gamma {:.2f}, bw {:.2f})'
+          .format((end - begin).seconds, inputs[0], inputs[1], inputs[2]))
+    return inputs + result
 
 
 def main():
@@ -392,7 +392,7 @@ def main():
             for bw in Bw:
                 inputs.append([dim, gamma, bw])
 
-    pool = multiprocessing.Pool(8)
+    pool = multiprocessing.Pool(1)
     results = pool.map(run, inputs)
     with open('Ian', 'wb') as file:
         pickle.dump(results, file)
