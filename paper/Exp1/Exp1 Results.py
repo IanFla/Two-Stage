@@ -52,6 +52,7 @@ def draw_main(dim):
     axs[1].legend(['gamma='+str(gamma) for gamma in Gamma])
     axs[1].set_title('log(KLD)')
     for i, gamma in enumerate(Gamma):
+        draw(dim=dim, gamma=gamma, name='IS a-var', to_ax=axs[i+2], log=True)
         draw(dim=dim, gamma=gamma, name='NIS a-var', to_ax=axs[i+2], log=True)
         draw(dim=dim, gamma=gamma, name='MIS a-var', to_ax=axs[i+2], log=True)
         draw(dim=dim, gamma=gamma, name='RIS(O) a-var', to_ax=axs[i+2], log=True)
