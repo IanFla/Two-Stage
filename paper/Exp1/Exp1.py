@@ -2,6 +2,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 from datetime import datetime as dt
 from particles import resampling as rs
+import pickle
+import multiprocessing
 
 from scipy.stats import multivariate_normal as mvnorm
 from scipy.stats import multivariate_t as mvt
@@ -362,7 +364,7 @@ def experiment(seed, dim, target,
     return mle.result
 
 
-def run(dim, bw, factor, local, gamma):
+def run(dim, gamma, bw):
     begin = dt.now()
     mean = np.zeros(dim)
     target = mvnorm(mean=mean)
@@ -370,20 +372,32 @@ def run(dim, bw, factor, local, gamma):
     x = np.linspace(-4, 4, 101)
     result = experiment(seed=19971107, dim=dim, target=target,
                         init_proposal=init_proposal, size_est=100000, x=x,
-                        size=1000, ratio=20, resample=True,
-                        bw=bw, factor=factor, local=local, gamma=gamma, alpha0=0.1,
+                        size=500, ratio=100, resample=True,
+                        bw=bw, factor='scott', local=True, gamma=gamma, alpha0=0.1,
                         alphaR=1000000.0, alphaL=0.1,
-                        stage=3, show=True)
+                        stage=4, show=True)
     end = dt.now()
-    print('Total spent: {}s (dim {}, bw {:.2f} ({}), gamma {:.2f})'
-          .format((end - begin).seconds, dim, bw, factor, gamma))
-    return result
+    print('Total spent: {}s (dim {}, bw {:.2f}, gamma {:.2f})'
+          .format((end - begin).seconds, dim, bw, gamma))
+    return [dim, gamma, bw] + result
 
 
 def main():
-    res = [run(dim=8, bw=1.0, factor='scott', local=False, gamma=1.0)]
-    return res
+    Dim = [2, 4, 6, 8, 10]
+    Gamma = [0.1, 0.3, 0.5, 1.0]
+    Bw = np.linspace(0.4, 3.2, 29)
+    inputs = []
+    for dim in Dim:
+        for gamma in Gamma:
+            for bw in Bw:
+                inputs.append([dim, gamma, bw])
+
+    pool = multiprocessing.Pool(8)
+    results = pool.map(run, inputs)
+    with open('Ian', 'wb') as file:
+        pickle.dump(results, file)
+        file.close()
 
 
 if __name__ == '__main__':
-    results = main()
+    main()
