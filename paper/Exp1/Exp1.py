@@ -2,8 +2,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 from datetime import datetime as dt
 from particles import resampling as rs
-import pickle
-import multiprocessing
+# import pickle
+# import multiprocessing
 
 from scipy.stats import multivariate_normal as mvnorm
 from scipy.stats import multivariate_t as mvt
@@ -375,7 +375,7 @@ def run(inputs):
                         size=500, ratio=100, resample=True,
                         bw=inputs[2], factor='scott', local=True, gamma=inputs[1], alpha0=0.1,
                         alphaR=1000000.0, alphaL=0.1,
-                        stage=3, show=False)
+                        stage=3, show=True)
     end = dt.now()
     print('Total spent: {}s (dim {}, gamma {:.2f}, bw {:.2f})'
           .format((end - begin).seconds, inputs[0], inputs[1], inputs[2]))
@@ -383,20 +383,21 @@ def run(inputs):
 
 
 def main():
-    Dim = [2, 4, 6, 8, 10]
-    Gamma = [0.1, 0.3, 0.5, 1.0]
-    Bw = np.linspace(0.4, 3.2, 29)
-    inputs = []
-    for dim in Dim:
-        for gamma in Gamma:
-            for bw in Bw:
-                inputs.append([dim, gamma, bw])
-
-    pool = multiprocessing.Pool(1)
-    results = pool.map(run, inputs)
-    with open('Ian', 'wb') as file:
-        pickle.dump(results, file)
-        file.close()
+    print(run([5, 1.0, 2.0]))
+    # Dim = [2, 4, 6, 8, 10]
+    # Gamma = [0.1, 0.3, 0.5, 1.0]
+    # Bw = np.linspace(0.4, 3.2, 29)
+    # inputs = []
+    # for dim in Dim:
+    #     for gamma in Gamma:
+    #         for bw in Bw:
+    #             inputs.append([dim, gamma, bw])
+    #
+    # pool = multiprocessing.Pool(1)
+    # results = pool.map(run, inputs)
+    # with open('Ian', 'wb') as file:
+    #     pickle.dump(results, file)
+    #     file.close()
 
 
 if __name__ == '__main__':

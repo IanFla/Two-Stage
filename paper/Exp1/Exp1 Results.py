@@ -1,54 +1,66 @@
 import numpy as np
 from matplotlib import pyplot as plt
 import pickle
-import seaborn as sb
-import pandas as pd
 
 
-Dim = [2, 4, 8]
-Bw = np.around(np.linspace(0.6, 2.8, 12), 1)
-A = [-1/4, -1/8, 0.0, 1/8, 1/4, 1/2, 1.0]
-List = ['IS est', 'IS a-var', 'kernel number',
-        'mean bdwth', 'ESS (kde)', 'sqrt(ISE/Rf)', 'KLD',
-        'NIS est', 'NIS a-var', 'MIS est', 'MIS a-var',
-        'CI mean', 'CI>30', 'R2(O)', 'R2(R)', 'R2(L)',
-        'RIS(O) est', 'RIS(O) a-var', 'RIS(R) est', 'RIS(R) a-var', 'RIS(L) est', 'RIS(L) a-var',
-        'RIS(O,u) est', 'RIS(O,u) a-var', 'RIS(R,u) est', 'RIS(R,u) a-var', 'RIS(L,u) est', 'RIS(L,u) a-var']
+file = open('Ian', 'rb')
+Data = np.array(pickle.load(file))
+Dim = [2, 4, 6, 8, 10]
+Gamma = [0.1, 0.3, 0.5, 1.0]
+Names = ['dim', 'gamma', 'bw',
+         'IS est', 'IS a-var', 'n0/ESS', 'n0/RSS', 'kernel number',
+         'mean bdwth', 'kde ESS', 'sqrt(ISE/Rf)', 'KLD',
+         'NIS est', 'NIS a-var', 'MIS est', 'MIS a-var',
+         'CI>30', 'R2(O)', 'R2(R)', 'R2(L)',
+         'RIS(O) est', 'RIS(O) a-var', 'RIS(R) est', 'RIS(R) a-var', 'RIS(L) est', 'RIS(L) a-var',
+         'RIS(O,u) est', 'RIS(O,u) a-var', 'RIS(R,u) est', 'RIS(R,u) a-var', 'RIS(L,u) est', 'RIS(L,u) a-var']
 
 
-def draw(dim, name, log=False):
-    select = List.index(name)
-    data = Data[dim]
-    matrix = np.zeros((len(A), len(Bw)))
-    for i in range(len(A)):
-        for j in range(len(Bw)):
-            matrix[i, j] = data[i][j][select]
+def draw(dim, gamma, name, to_ax, log=False):
+    if dim not in Dim:
+        print('dim error')
+        return
 
+    if gamma not in Gamma:
+        print('gamma error')
+        return
+
+    if name not in Names:
+        print('name error')
+        return
+
+    data = Data[(Data[:, 0] == dim) & (Data[:, 1] == gamma)]
+    x = data[:, 2]
+    y = data[:, Names.index(name)]
     if log:
-        matrix = np.log(matrix)
+        y = np.log(y)
         name = 'log(' + name + ')'
 
-    df = pd.DataFrame(matrix, index=A, columns=Bw)
-    f, ax = plt.subplots(figsize=(len(Bw), len(A)))
-    sb.heatmap(df, annot=True, linewidths=0.5, cbar=False, ax=ax)
-    ax.set_xlabel('h')
-    ax.set_ylabel('a')
-    maxi, maxj = np.unravel_index(np.argmax(matrix, axis=None), matrix.shape)
-    mini, minj = np.unravel_index(np.argmin(matrix, axis=None), matrix.shape)
-    ax.set_title(name + ': ({:.2g} [{},{}] <> {:.2g} [{},{}])'
-                 .format(matrix.min(initial=1e10), A[mini], Bw[minj],
-                         matrix.max(initial=-1e10), A[maxi], Bw[maxj]))
+    to_ax.plot(x, y, label=name)
+    return x, y
+
+
+def draw_main(dim):
+    f, axs = plt.subplots(3, 2, figsize=(16, 12))
+    axs = axs.flatten()
+    for gamma in Gamma:
+        draw(dim=dim, gamma=gamma, name='sqrt(ISE/Rf)', to_ax=axs[0], log=True)
+        draw(dim=dim, gamma=gamma, name='KLD', to_ax=axs[1], log=True)
+
+    axs[0].legend(['gamma='+str(gamma) for gamma in Gamma])
+    axs[0].set_title('log(sqrt(ISE/Rf))')
+    axs[1].legend(['gamma='+str(gamma) for gamma in Gamma])
+    axs[1].set_title('log(KLD)')
+    for i, gamma in enumerate(Gamma):
+        draw(dim=dim, gamma=gamma, name='NIS a-var', to_ax=axs[i+2], log=True)
+        draw(dim=dim, gamma=gamma, name='MIS a-var', to_ax=axs[i+2], log=True)
+        draw(dim=dim, gamma=gamma, name='RIS(O) a-var', to_ax=axs[i+2], log=True)
+        axs[i+2].legend()
+        axs[i+2].set_title('gamma='+str(gamma))
+
     plt.show()
 
 
 if __name__ == '__main__':
-    file = open('IanN', 'rb')
-    Data = pickle.load(file)
-    dimension = 8
-    draw(Dim.index(dimension), 'mean bdwth', log=True)
-    draw(Dim.index(dimension), 'CI>30')
-    draw(Dim.index(dimension), 'sqrt(ISE/Rf)', log=True)
-    draw(Dim.index(dimension), 'KLD', log=True)
-    draw(Dim.index(dimension), 'NIS a-var', log=True)
-    draw(Dim.index(dimension), 'MIS a-var', log=True)
-    draw(Dim.index(dimension), 'RIS(O) a-var', log=True)
+    for d in Dim:
+        draw_main(dim=d)
