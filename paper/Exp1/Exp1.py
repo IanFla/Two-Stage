@@ -372,8 +372,8 @@ def run(inputs):
     x = np.linspace(-4, 4, 101)
     result = experiment(seed=19971107, dim=inputs[0], target=target,
                         init_proposal=init_proposal, size_est=100000, x=x,
-                        size=500, ratio=100, resample=True,
-                        bw=inputs[2], factor='scott', local=True, gamma=inputs[1], alpha0=0.1,
+                        size=500, ratio=inputs[1], resample=True,
+                        bw=inputs[2], factor='scott', local=True, gamma=1.0, alpha0=0.1,
                         alphaR=1000000.0, alphaL=0.1,
                         stage=3, show=True)
     end = dt.now()
