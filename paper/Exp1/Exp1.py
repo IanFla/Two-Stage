@@ -2,8 +2,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 from datetime import datetime as dt
 from particles import resampling as rs
-# import pickle
-# import multiprocessing
+import pickle
+import multiprocessing
 
 from scipy.stats import multivariate_normal as mvnorm
 from scipy.stats import multivariate_t as mvt
@@ -23,11 +23,10 @@ class KDE:
     def __init__(self, centers, weights, bw, factor='scott', local=False, gamma=None, ps=None, a=0.0, kdf=0):
         self.centers = centers
         self.weights = weights / weights.sum()
+        self.neff = 1 / np.sum(self.weights ** 2)
         self.size, self.d = centers.shape
         self.local = local
         if self.local:
-            self.gamma = gamma
-            self.neff = self.gamma * self.size
             icov = np.linalg.inv(np.cov(self.centers.T, aweights=weights))
             distances = []
             for x1 in self.centers:
@@ -39,11 +38,10 @@ class KDE:
 
             covs = []
             for j, center in enumerate(self.centers):
-                index = np.argsort(distances[j])[:np.around(self.neff).astype(np.int64)]
+                index = np.argsort(distances[j])[:np.around(gamma * self.size).astype(np.int64)]
                 covs.append(np.cov(self.centers[index].T, aweights=weights[index]))
 
         else:
-            self.neff = 1 / np.sum(self.weights ** 2)
             covs = np.cov(centers.T, aweights=weights)
             if ps is None:
                 ps = np.ones(self.size)
@@ -54,6 +52,7 @@ class KDE:
         scott = self.neff ** (-1 / (self.d + 4))
         silverman = scott * ((4 / (self.d + 2)) ** (1 / (self.d + 4)))
         self.factor = bw * scott if factor == 'scott' else bw * silverman
+        self.factor = self.factor / (gamma ** (1 / self.d)) if self.local else self.factor
         self.covs = (self.factor ** 2) * np.array(covs)
         if kdf < 3:
             self.kernel_pdf = lambda x, m, v: mvnorm.pdf(x=x, mean=m, cov=v)
@@ -366,38 +365,35 @@ def experiment(seed, dim, target,
 
 def run(inputs):
     begin = dt.now()
-    mean = np.zeros(inputs[0])
+    mean = np.zeros(7)
     target = mvnorm(mean=mean)
     init_proposal = mvnorm(mean=mean, cov=4)
     x = np.linspace(-4, 4, 101)
-    result = experiment(seed=19971107, dim=inputs[0], target=target,
+    result = experiment(seed=19971107, dim=mean.size, target=target,
                         init_proposal=init_proposal, size_est=100000, x=x,
-                        size=500, ratio=inputs[1], resample=True,
-                        bw=inputs[2], factor='scott', local=True, gamma=1.0, alpha0=0.1,
-                        alphaR=1000000.0, alphaL=0.1,
-                        stage=3, show=True)
+                        size=500, ratio=inputs[0], resample=True,
+                        bw=inputs[1], factor='scott', local=False, gamma=1.0, alpha0=0.1,
+                        alphaR=10000.0, alphaL=0.1,
+                        stage=3, show=False)
     end = dt.now()
-    print('Total spent: {}s (dim {}, gamma {:.2f}, bw {:.2f})'
-          .format((end - begin).seconds, inputs[0], inputs[1], inputs[2]))
+    print('Total spent: {}s (ratio {:.2f}, bw {:.2f})'
+          .format((end - begin).seconds, inputs[0], inputs[1]))
     return inputs + result
 
 
 def main():
-    print(run([5, 1.0, 2.0]))
-    # Dim = [2, 4, 6, 8, 10]
-    # Gamma = [0.1, 0.3, 0.5, 1.0]
-    # Bw = np.linspace(0.4, 3.2, 29)
-    # inputs = []
-    # for dim in Dim:
-    #     for gamma in Gamma:
-    #         for bw in Bw:
-    #             inputs.append([dim, gamma, bw])
-    #
-    # pool = multiprocessing.Pool(1)
-    # results = pool.map(run, inputs)
-    # with open('Ian', 'wb') as file:
-    #     pickle.dump(results, file)
-    #     file.close()
+    Ratio = [10, 20, 30, 40, 60, 80, 100, 130, 160, 190]
+    Bw = np.linspace(0.4, 3.2, 15)
+    inputs = []
+    for ratio in Ratio:
+        for bw in Bw:
+            inputs.append([ratio, bw])
+
+    pool = multiprocessing.Pool(2)
+    results = pool.map(run, inputs)
+    with open('RatioBw', 'wb') as file:
+        pickle.dump(results, file)
+        file.close()
 
 
 if __name__ == '__main__':
