@@ -371,27 +371,27 @@ def run(inputs):
     x = np.linspace(-4, 4, 101)
     result = experiment(seed=19971107, dim=mean.size, target=target,
                         init_proposal=init_proposal, size_est=100000, x=x,
-                        size=500, ratio=inputs[0], resample=True,
+                        size=inputs[0], ratio=100, resample=True,
                         bw=inputs[1], factor='scott', local=False, gamma=1.0, alpha0=0.1,
                         alphaR=10000.0, alphaL=0.1,
                         stage=3, show=False)
     end = dt.now()
-    print('Total spent: {}s (ratio {:.2f}, bw {:.2f})'
+    print('Total spent: {}s (size {:.2f}, bw {:.2f})'
           .format((end - begin).seconds, inputs[0], inputs[1]))
     return inputs + result
 
 
 def main():
-    Ratio = [10, 20, 30, 40, 60, 80, 100, 130, 160, 190]
+    Sizes = [50, 100, 150, 200, 500, 1000, 1500, 2000, 2500]
     Bw = np.linspace(0.4, 3.2, 15)
     inputs = []
-    for ratio in Ratio:
+    for size in Sizes:
         for bw in Bw:
-            inputs.append([ratio, bw])
+            inputs.append([size, bw])
 
     pool = multiprocessing.Pool(2)
     results = pool.map(run, inputs)
-    with open('RatioBw', 'wb') as file:
+    with open('SizeBw7', 'wb') as file:
         pickle.dump(results, file)
         file.close()
 

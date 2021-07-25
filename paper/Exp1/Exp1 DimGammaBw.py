@@ -3,7 +3,7 @@ from matplotlib import pyplot as plt
 import pickle
 
 
-file = open('DimGammaBw', 'rb')
+file = open('DimGammaBw0', 'rb')
 Data = np.array(pickle.load(file))
 Dim = [2, 4, 6, 8, 10]
 Gamma = [0.1, 0.3, 0.5, 1.0]
