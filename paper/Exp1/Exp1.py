@@ -371,27 +371,27 @@ def run(inputs):
     x = np.linspace(-4, 4, 101)
     result = experiment(seed=19971107, dim=mean.size, target=target,
                         init_proposal=init_proposal, size_est=100000, x=x,
-                        size=inputs[0], ratio=100, resample=True,
-                        bw=inputs[1], factor='scott', local=False, gamma=1.0, alpha0=0.1,
+                        size=500, ratio=100, resample=True,
+                        bw=inputs[1], factor='scott', local=False, gamma=1.0, alpha0=inputs[0],
                         alphaR=10000.0, alphaL=0.1,
                         stage=3, show=False)
     end = dt.now()
-    print('Total spent: {}s (size {:.2f}, bw {:.2f})'
+    print('Total spent: {}s (alpha0 {:.2f}, bw {:.2f})'
           .format((end - begin).seconds, inputs[0], inputs[1]))
     return inputs + result
 
 
 def main():
-    Sizes = [50, 100, 150, 200, 500, 1000, 1500, 2000, 2500]
+    Alpha0 = [0.01, 0.02, 0.05, 0.1, 0.2, 0.4, 0.6, 0.9]
     Bw = np.linspace(0.4, 3.2, 15)
     inputs = []
-    for size in Sizes:
+    for alpha0 in Alpha0:
         for bw in Bw:
-            inputs.append([size, bw])
+            inputs.append([alpha0, bw])
 
     pool = multiprocessing.Pool(2)
     results = pool.map(run, inputs)
-    with open('SizeBw7', 'wb') as file:
+    with open('Alpha0Bw7', 'wb') as file:
         pickle.dump(results, file)
         file.close()
 
