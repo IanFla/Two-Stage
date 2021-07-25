@@ -3,11 +3,11 @@ from matplotlib import pyplot as plt
 import pickle
 
 
-file = open('Alpha0Bw7', 'rb')
+file = open('Data/SizeBw7', 'rb')
 Data = np.array(pickle.load(file))
-Alpha0 = [0.01, 0.02, 0.05, 0.1, 0.2, 0.4, 0.6, 0.9]
+Sizes = [50, 100, 150, 200, 500, 1000, 1500, 2000, 2500]
 Bw = np.linspace(0.4, 3.2, 15)
-Names = ['alpha0', 'bw',
+Names = ['size', 'bw',
          'IS est', 'IS a-var', 'n0/ESS', 'n0/RSS', 'kernel number',
          'mean bdwth', 'kde ESS', 'sqrt(ISE/Rf)', 'KLD',
          'NIS est', 'NIS a-var', 'MIS est', 'MIS a-var',
@@ -16,16 +16,16 @@ Names = ['alpha0', 'bw',
          'RIS(O,u) est', 'RIS(O,u) a-var', 'RIS(R,u) est', 'RIS(R,u) a-var', 'RIS(L,u) est', 'RIS(L,u) a-var']
 
 
-def draw(alpha0, name, to_ax, log=False):
-    if alpha0 not in Alpha0:
-        print('alpha0 error')
+def draw(size, name, to_ax, log=False):
+    if size not in Sizes:
+        print('size error')
         return
 
     if name not in Names:
         print('name error')
         return
 
-    data = Data[Data[:, 0] == alpha0]
+    data = Data[Data[:, 0] == size]
     x = data[:, 1]
     y = data[:, Names.index(name)]
     if log:
@@ -37,24 +37,23 @@ def draw(alpha0, name, to_ax, log=False):
 
 
 def draw_main():
-    f, axs = plt.subplots(3, 1, figsize=(10, 12))
+    f, axs = plt.subplots(3, 2, figsize=(20, 12))
     axs = axs.flatten()
-    names = ['MIS a-var', 'RIS(O) a-var', 'RIS(O) a-var/MIS a-var']
+    names = ['sqrt(ISE/Rf)', 'KLD', 'NIS a-var', 'MIS a-var', 'RIS(O) a-var', 'RIS(O) a-var/MIS a-var']
     for i, name in enumerate(names):
-        labels = ['alpha0=' + str(alpha0) for alpha0 in Alpha0]
-        if i == 0:
+        labels = ['size=' + str(size) for size in Sizes]
+        if (i >= 2) and (i <= 4):
             axs[i].plot(Bw, np.log(Data[0, Names.index('IS a-var')]) * np.ones(Bw.size), c='k')
-            axs[i].plot(Bw, np.log(Data[Data[:, 0] == Alpha0[0], Names.index('NIS a-var')]), c='k')
-            labels = ['reference 1', 'NIS a-var'] + labels
+            labels = ['reference'] + labels
 
-        for alpha0 in Alpha0:
+        for size in Sizes:
             if name == 'RIS(O) a-var/MIS a-var':
-                data = Data[Data[:, 0] == alpha0]
+                data = Data[Data[:, 0] == size]
                 x = data[:, 1]
                 y = np.log(data[:, Names.index('RIS(O) a-var')] / data[:, Names.index('MIS a-var')])
                 axs[i].plot(x, y)
             else:
-                draw(alpha0=alpha0, name=name, to_ax=axs[i], log=True)
+                draw(size=size, name=name, to_ax=axs[i], log=True)
 
         axs[i].legend(labels)
         axs[i].set_title('log('+name+')')

@@ -3,11 +3,11 @@ from matplotlib import pyplot as plt
 import pickle
 
 
-file = open('SizeBw7', 'rb')
+file = open('Data/RatioBw7', 'rb')
 Data = np.array(pickle.load(file))
-Sizes = [50, 100, 150, 200, 500, 1000, 1500, 2000, 2500]
+Ratio = [10, 20, 30, 40, 60, 80, 100, 130, 160, 190]
 Bw = np.linspace(0.4, 3.2, 15)
-Names = ['size', 'bw',
+Names = ['ratio', 'bw',
          'IS est', 'IS a-var', 'n0/ESS', 'n0/RSS', 'kernel number',
          'mean bdwth', 'kde ESS', 'sqrt(ISE/Rf)', 'KLD',
          'NIS est', 'NIS a-var', 'MIS est', 'MIS a-var',
@@ -16,16 +16,16 @@ Names = ['size', 'bw',
          'RIS(O,u) est', 'RIS(O,u) a-var', 'RIS(R,u) est', 'RIS(R,u) a-var', 'RIS(L,u) est', 'RIS(L,u) a-var']
 
 
-def draw(size, name, to_ax, log=False):
-    if size not in Sizes:
-        print('size error')
+def draw(ratio, name, to_ax, log=False):
+    if ratio not in Ratio:
+        print('ratio error')
         return
 
     if name not in Names:
         print('name error')
         return
 
-    data = Data[Data[:, 0] == size]
+    data = Data[Data[:, 0] == ratio]
     x = data[:, 1]
     y = data[:, Names.index(name)]
     if log:
@@ -41,22 +41,22 @@ def draw_main():
     axs = axs.flatten()
     names = ['sqrt(ISE/Rf)', 'KLD', 'NIS a-var', 'MIS a-var', 'RIS(O) a-var', 'RIS(O) a-var/MIS a-var']
     for i, name in enumerate(names):
-        labels = ['size=' + str(size) for size in Sizes]
+        labels = ['ratio=' + str(ratio) for ratio in Ratio]
         if (i >= 2) and (i <= 4):
             axs[i].plot(Bw, np.log(Data[0, Names.index('IS a-var')]) * np.ones(Bw.size), c='k')
             labels = ['reference'] + labels
 
-        for size in Sizes:
+        for ratio in Ratio:
             if name == 'RIS(O) a-var/MIS a-var':
-                data = Data[Data[:, 0] == size]
+                data = Data[Data[:, 0] == ratio]
                 x = data[:, 1]
                 y = np.log(data[:, Names.index('RIS(O) a-var')] / data[:, Names.index('MIS a-var')])
                 axs[i].plot(x, y)
             else:
-                draw(size=size, name=name, to_ax=axs[i], log=True)
+                draw(ratio=ratio, name=name, to_ax=axs[i], log=True)
 
         axs[i].legend(labels)
-        axs[i].set_title('log('+name+')')
+        axs[i].set_title('log(' + name + ')')
 
     plt.show()
 

@@ -391,7 +391,7 @@ def main():
 
     pool = multiprocessing.Pool(2)
     results = pool.map(run, inputs)
-    with open('Alpha0Bw7', 'wb') as file:
+    with open('Data/Alpha0Bw7', 'wb') as file:
         pickle.dump(results, file)
         file.close()
 

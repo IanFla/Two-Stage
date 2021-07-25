@@ -3,7 +3,7 @@ from matplotlib import pyplot as plt
 import pickle
 
 
-file = open('DimGammaBw0', 'rb')
+file = open('Data/DimGammaBw1', 'rb')
 Data = np.array(pickle.load(file))
 Dim = [2, 4, 6, 8, 10]
 Gamma = [0.1, 0.3, 0.5, 1.0]
@@ -41,15 +41,16 @@ def draw(dim, gamma, name, to_ax, log=False):
 
 
 def draw_main(dim):
-    f, axs = plt.subplots(3, 2, figsize=(16, 12))
+    f, axs = plt.subplots(3, 2, figsize=(20, 12))
     axs = axs.flatten()
     for gamma in Gamma:
         draw(dim=dim, gamma=gamma, name='sqrt(ISE/Rf)', to_ax=axs[0], log=True)
         draw(dim=dim, gamma=gamma, name='KLD', to_ax=axs[1], log=True)
 
-    axs[0].legend(['gamma='+str(gamma) for gamma in Gamma])
+    labels = ['gamma='+str(gamma) for gamma in Gamma]
+    axs[0].legend(labels)
     axs[0].set_title('log(sqrt(ISE/Rf))')
-    axs[1].legend(['gamma='+str(gamma) for gamma in Gamma])
+    axs[1].legend(labels)
     axs[1].set_title('log(KLD)')
     for i, gamma in enumerate(Gamma):
         draw(dim=dim, gamma=gamma, name='IS a-var', to_ax=axs[i+2], log=True)
