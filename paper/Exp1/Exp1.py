@@ -2,8 +2,8 @@ import numpy as np
 from matplotlib import pyplot as plt
 from datetime import datetime as dt
 from particles import resampling as rs
-# import pickle
-# import multiprocessing
+import pickle
+import multiprocessing
 
 from scipy.stats import multivariate_normal as mvnorm
 from scipy.stats import multivariate_t as mvt
@@ -333,7 +333,7 @@ def experiment(seed, dim, target,
                bw, factor, local, gamma, alpha0,
                alphaR, alphaL,
                stage=4, show=False):
-    np.random.seed(seed)
+    # np.random.seed(seed)
     mle = MLE(dim, target, init_proposal, size_est=size_est, show=show)
     if stage >= 1:
         mle.disp('==IS==================================================IS==')
@@ -372,29 +372,22 @@ def run(inputs):
     result = experiment(seed=19971107, dim=mean.size, target=target,
                         init_proposal=init_proposal, size_est=100000, x=x,
                         size=500, ratio=100, resample=True,
-                        bw=inputs[0], factor='scott', local=False, gamma=1.0, alpha0=0.1,
+                        bw=1.5, factor='scott', local=False, gamma=1.0, alpha0=0.1,
                         alphaR=10000.0, alphaL=0.1,
-                        stage=4, show=True)
+                        stage=4, show=False)
     end = dt.now()
-    print('Total spent: {}s (bw {:.2f})'
+    print('Total spent: {}s (time {})'
           .format((end - begin).seconds, inputs[0]))
     return inputs + result
 
 
 def main():
-    run([1.5])
-    # Alpha0 = [0.01, 0.02, 0.05, 0.1, 0.2, 0.4, 0.6, 0.9]
-    # Bw = np.linspace(0.4, 3.2, 15)
-    # inputs = []
-    # for alpha0 in Alpha0:
-    #     for bw in Bw:
-    #         inputs.append([alpha0, bw])
-    #
-    # pool = multiprocessing.Pool(2)
-    # results = pool.map(run, inputs)
-    # with open('Data/Alpha0Bw7', 'wb') as file:
-    #     pickle.dump(results, file)
-    #     file.close()
+    inputs = np.arange(200).reshape([-1, 1]) + 1
+    pool = multiprocessing.Pool(2)
+    results = pool.map(run, inputs)
+    with open('Data/Repeat7', 'wb') as file:
+        pickle.dump(results, file)
+        file.close()
 
 
 if __name__ == '__main__':
