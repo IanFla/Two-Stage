@@ -26,6 +26,7 @@ class RRR:
 
 
 def main():
+    np.random.seed(19971107)
     for dim in range(10):
         RRR(dim + 1, 1, 2).calculate(100000)
 
