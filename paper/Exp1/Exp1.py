@@ -370,22 +370,28 @@ def run(inputs):
     init_proposal = mvnorm(mean=mean, cov=4)
     x = np.linspace(-4, 4, 101)
     result = experiment(seed=19971107, dim=mean.size, target=target,
-                        init_proposal=init_proposal, size_est=100000, x=x,
+                        init_proposal=init_proposal, size_est=inputs[0], x=x,
                         size=500, ratio=100, resample=True,
-                        bw=1.5, factor='scott', local=False, gamma=1.0, alpha0=0.1,
+                        bw=inputs[1], factor='scott', local=False, gamma=1.0, alpha0=0.1,
                         alphaR=10000.0, alphaL=0.1,
-                        stage=4, show=False)
+                        stage=3, show=False)
     end = dt.now()
-    print('Total spent: {}s (time {})'
-          .format((end - begin).seconds, inputs[0]))
+    print('Total spent: {}s (size_est {}, bw {:.2f})'
+          .format((end - begin).seconds, inputs[0], inputs[1]))
     return inputs + result
 
 
 def main():
-    inputs = np.arange(200).reshape([-1, 1]) + 1
+    Size_est = [1000, 2000, 5000, 10000, 15000, 30000, 60000, 100000, 150000, 200000]
+    Bw = np.linspace(0.4, 3.2, 15)
+    inputs = []
+    for size_est in Size_est:
+        for bw in Bw:
+            inputs.append([size_est, bw])
+
     pool = multiprocessing.Pool(2)
     results = pool.map(run, inputs)
-    with open('Data/Repeat7', 'wb') as file:
+    with open('SizeestBw7', 'wb') as file:
         pickle.dump(results, file)
         file.close()
 
