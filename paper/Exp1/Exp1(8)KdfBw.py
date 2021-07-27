@@ -3,11 +3,11 @@ from matplotlib import pyplot as plt
 import pickle
 
 
-file = open('Data/SizeestBw7', 'rb')
+file = open('Data/KdfBw7', 'rb')
 Data = np.array(pickle.load(file))
-Size_est = [700, 1000, 1500, 2000, 5000, 10000, 20000, 50000, 100000, 150000]
+Kdf = [3, 4, 5, 8, 12, 20, 50, 100, 0]
 Bw = np.linspace(0.4, 3.2, 15)
-Names = ['size', 'bw',
+Names = ['kdf', 'bw',
          'IS est', 'IS a-var', 'n0/ESS', 'n0/RSS', 'kernel number',
          'mean bdwth', 'kde ESS', 'sqrt(ISE/Rf)', 'KLD',
          'NIS est', 'NIS a-var', 'MIS est', 'MIS a-var',
@@ -16,16 +16,16 @@ Names = ['size', 'bw',
          'RIS(O,u) est', 'RIS(O,u) a-var', 'RIS(R,u) est', 'RIS(R,u) a-var', 'RIS(L,u) est', 'RIS(L,u) a-var']
 
 
-def draw(size_est, name, to_ax, log=False):
-    if size_est not in Size_est:
-        print('size_est error')
+def draw(kdf, name, to_ax, log=False):
+    if kdf not in Kdf:
+        print('kdf error')
         return
 
     if name not in Names:
         print('name error')
         return
 
-    data = Data[Data[:, 0] == size_est]
+    data = Data[Data[:, 0] == kdf]
     x = data[:, 1]
     y = data[:, Names.index(name)]
     if log:
@@ -39,21 +39,21 @@ def draw(size_est, name, to_ax, log=False):
 def draw_main():
     f, axs = plt.subplots(3, 2, figsize=(20, 12))
     axs = axs.flatten()
-    names = ['KLD', 'NIS a-var', 'MIS a-var', 'RIS(O) a-var', 'RIS(O,u) a-var', 'RIS(O,u) a-var/RIS(O) a-var']
+    names = ['sqrt(ISE/Rf)', 'KLD', 'NIS a-var', 'MIS a-var', 'RIS(O) a-var', 'RIS(O) a-var/MIS a-var']
     for i, name in enumerate(names):
-        labels = ['size_est=' + str(size_est) for size_est in Size_est]
+        labels = ['kdf=' + str(kdf) for kdf in Kdf]
         if (i >= 2) and (i <= 4):
             axs[i].plot(Bw, np.log(Data[0, Names.index('IS a-var')]) * np.ones(Bw.size), c='k')
             labels = ['reference'] + labels
 
-        for size_est in Size_est:
-            if name == 'RIS(O,u) a-var/RIS(O) a-var':
-                data = Data[Data[:, 0] == size_est]
+        for kdf in Kdf:
+            if name == 'RIS(O) a-var/MIS a-var':
+                data = Data[Data[:, 0] == kdf]
                 x = data[:, 1]
-                y = np.log(data[:, Names.index('RIS(O,u) a-var')] / data[:, Names.index('RIS(O) a-var')])
+                y = np.log(data[:, Names.index('RIS(O) a-var')] / data[:, Names.index('MIS a-var')])
                 axs[i].plot(x, y)
             else:
-                draw(size_est=size_est, name=name, to_ax=axs[i], log=True)
+                draw(kdf=kdf, name=name, to_ax=axs[i], log=True)
 
         axs[i].legend(labels)
         axs[i].set_title('log('+name+')')
