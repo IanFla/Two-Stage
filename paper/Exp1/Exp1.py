@@ -166,8 +166,8 @@ class MLE:
             self.centers = self.init_sampler(size)
             self.weights = self.__divi(self.target(self.centers), self.init_proposal(self.centers))
 
-    def proposal(self, bw=1.0, factor='scott', local=False, gamma=0.3, alpha0=0.1):
-        self.kde = KDE(self.centers, self.weights, bw=bw, factor=factor, local=local, gamma=gamma)
+    def proposal(self, bw=1.0, factor='scott', local=False, gamma=0.3, kdf=0, alpha0=0.1):
+        self.kde = KDE(self.centers, self.weights, bw=bw, factor=factor, local=local, gamma=gamma, kdf=kdf)
         covs = self.kde.covs.mean(axis=0) if local else self.kde.lambda2s.mean() * self.kde.covs
         bdwths = np.sqrt(np.diag(covs))
         self.disp('KDE: (mean bdwth: {:.4f}, factor {:.4f}, ESS {:.0f}/{})'
@@ -330,7 +330,7 @@ class MLE:
 def experiment(seed, dim, target,
                init_proposal, size_est, x,
                size, ratio, resample,
-               bw, factor, local, gamma, alpha0,
+               bw, factor, local, gamma, kdf, alpha0,
                alphaR, alphaL,
                stage=4, show=False):
     np.random.seed(seed)
@@ -344,7 +344,7 @@ def experiment(seed, dim, target,
         mle.resampling(size=size, ratio=ratio, resample=resample)
         if stage >= 2:
             mle.disp('==NIS================================================NIS==')
-            mle.proposal(bw=bw, factor=factor, local=local, gamma=gamma, alpha0=alpha0)
+            mle.proposal(bw=bw, factor=factor, local=local, gamma=gamma, kdf=kdf, alpha0=alpha0)
             Rf = target.pdf(target.rvs(size=size_est, random_state=seed)).mean()
             mle.nonparametric_estimation(Rf=Rf)
             if mle.show:
@@ -370,28 +370,28 @@ def run(inputs):
     init_proposal = mvnorm(mean=mean, cov=4)
     x = np.linspace(-4, 4, 101)
     result = experiment(seed=19971107, dim=mean.size, target=target,
-                        init_proposal=init_proposal, size_est=inputs[0], x=x,
+                        init_proposal=init_proposal, size_est=100000, x=x,
                         size=500, ratio=100, resample=True,
-                        bw=inputs[1], factor='scott', local=False, gamma=1.0, alpha0=0.1,
+                        bw=inputs[1], factor='scott', local=False, gamma=1.0, kdf=inputs[0], alpha0=0.1,
                         alphaR=10000.0, alphaL=0.1,
                         stage=3, show=False)
     end = dt.now()
-    print('Total spent: {}s (size_est {}, bw {:.2f})'
+    print('Total spent: {}s (kdf {}, bw {:.2f})'
           .format((end - begin).seconds, inputs[0], inputs[1]))
     return inputs + result
 
 
 def main():
-    Size_est = [700, 1000, 1500, 2000, 5000, 10000, 20000, 50000, 100000, 150000]
+    Kdf = [3, 4, 5, 8, 12, 20, 50, 100, 0]
     Bw = np.linspace(0.4, 3.2, 15)
     inputs = []
-    for size_est in Size_est:
+    for kdf in Kdf:
         for bw in Bw:
-            inputs.append([size_est, bw])
+            inputs.append([kdf, bw])
 
     pool = multiprocessing.Pool(2)
     results = pool.map(run, inputs)
-    with open('Data/SizeestBw7', 'wb') as file:
+    with open('KdfBw7', 'wb') as file:
         pickle.dump(results, file)
         file.close()
 
