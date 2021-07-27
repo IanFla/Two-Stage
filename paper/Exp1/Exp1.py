@@ -333,7 +333,7 @@ def experiment(seed, dim, target,
                bw, factor, local, gamma, alpha0,
                alphaR, alphaL,
                stage=4, show=False):
-    # np.random.seed(seed)
+    np.random.seed(seed)
     mle = MLE(dim, target, init_proposal, size_est=size_est, show=show)
     if stage >= 1:
         mle.disp('==IS==================================================IS==')
@@ -382,7 +382,7 @@ def run(inputs):
 
 
 def main():
-    Size_est = [1000, 2000, 5000, 10000, 15000, 30000, 60000, 100000, 150000, 200000]
+    Size_est = [700, 1000, 1500, 2000, 5000, 10000, 20000, 50000, 100000, 150000]
     Bw = np.linspace(0.4, 3.2, 15)
     inputs = []
     for size_est in Size_est:

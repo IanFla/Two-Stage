@@ -5,7 +5,7 @@ import pickle
 
 file = open('Data/SizeestBw7', 'rb')
 Data = np.array(pickle.load(file))
-Size_est = [1000, 2000, 5000, 10000, 15000, 30000, 60000, 100000, 150000, 200000]
+Size_est = [700, 1000, 1500, 2000, 5000, 10000, 20000, 50000, 100000, 150000]
 Bw = np.linspace(0.4, 3.2, 15)
 Names = ['size', 'bw',
          'IS est', 'IS a-var', 'n0/ESS', 'n0/RSS', 'kernel number',
@@ -39,7 +39,7 @@ def draw(size_est, name, to_ax, log=False):
 def draw_main():
     f, axs = plt.subplots(3, 2, figsize=(20, 12))
     axs = axs.flatten()
-    names = ['sqrt(ISE/Rf)', 'KLD', 'NIS a-var', 'MIS a-var', 'RIS(O) a-var', 'RIS(O,u) a-var']
+    names = ['KLD', 'NIS a-var', 'MIS a-var', 'RIS(O) a-var', 'RIS(O,u) a-var', 'RIS(O,u) a-var/RIS(O) a-var']
     for i, name in enumerate(names):
         labels = ['size_est=' + str(size_est) for size_est in Size_est]
         if (i >= 2) and (i <= 4):
@@ -47,7 +47,13 @@ def draw_main():
             labels = ['reference'] + labels
 
         for size_est in Size_est:
-            draw(size_est=size_est, name=name, to_ax=axs[i], log=True)
+            if name == 'RIS(O,u) a-var/RIS(O) a-var':
+                data = Data[Data[:, 0] == size_est]
+                x = data[:, 1]
+                y = np.log(data[:, Names.index('RIS(O,u) a-var')] / data[:, Names.index('RIS(O) a-var')])
+                axs[i].plot(x, y)
+            else:
+                draw(size_est=size_est, name=name, to_ax=axs[i], log=True)
 
         axs[i].legend(labels)
         axs[i].set_title('log('+name+')')
