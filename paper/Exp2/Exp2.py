@@ -81,13 +81,14 @@ class KDE:
 
 
 class MLE:
-    def __init__(self, dim, target, init_proposal, size_est, show=True):
+    def __init__(self, dim, target, indicator, init_proposal, size_est, show=True):
         self.show = show
         self.cache = []
         self.result = []
         self.dim = dim
 
         self.target = target.pdf
+        self.indicator = indicator
         self.init_proposal = init_proposal.pdf
         self.init_sampler = init_proposal.rvs
         self.size_est = size_est
@@ -123,10 +124,10 @@ class MLE:
         q[q == 0] = 1
         return p / q
 
-    def __estimate(self, weights, name, asym=True, check=True):
-        Z = np.mean(weights)
-        self.result.append(Z)
-        Err = np.abs(Z - 1)
+    def __estimate(self, samples, weights, name, asym=True, check=True):
+        self.Prob = weights[self.indicator(samples)].sum() / weights.sum()
+        self.result.append(self.Prob)
+        Err = np.abs(self.Prob - 0.05)
         if asym:
             aVar = np.var(weights)
             self.result.append(aVar)
@@ -327,58 +328,58 @@ class MLE:
         plt.show()
 
 
-def experiment(seed, dim, target,
-               init_proposal, size_est, x,
-               size, ratio, resample,
-               bw, factor, local, gamma, kdf, alpha0,
-               alphaR, alphaL,
-               stage=4, show=False):
-    np.random.seed(seed)
-    mle = MLE(dim, target, init_proposal, size_est=size_est, show=show)
-    if stage >= 1:
-        mle.disp('==IS==================================================IS==')
-        mle.initial_estimation()
-        if mle.show:
-            mle.draw(mle.init_proposal, x=x, name='initial')
-
-        mle.resampling(size=size, ratio=ratio, resample=resample)
-        if stage >= 2:
-            mle.disp('==NIS================================================NIS==')
-            mle.proposal(bw=bw, factor=factor, local=local, gamma=gamma, kdf=kdf, alpha0=alpha0)
-            Rf = target.pdf(target.rvs(size=size_est, random_state=seed)).mean()
-            mle.nonparametric_estimation(Rf=Rf)
-            if mle.show:
-                mle.draw(mle.nonpar_proposal, x=x, name='nonparametric')
-
-            if stage >= 3:
-                mle.disp('==RIS================================================RIS==')
-                mle.regression_estimation(alphaR=alphaR, alphaL=alphaL)
-                if mle.show:
-                    mle.draw(mle.mix_proposal, x=x, name='regression')
-
-                if stage >= 4:
-                    mle.disp('==MLE================================================MLE==')
-                    mle.likelihood_estimation(opt=True, NR=True)
-
-    return mle.result
+# def experiment(seed, dim, target,
+#                init_proposal, size_est, x,
+#                size, ratio, resample,
+#                bw, factor, local, gamma, kdf, alpha0,
+#                alphaR, alphaL,
+#                stage=4, show=False):
+#     np.random.seed(seed)
+#     mle = MLE(dim, target, init_proposal, size_est=size_est, show=show)
+#     if stage >= 1:
+#         mle.disp('==IS==================================================IS==')
+#         mle.initial_estimation()
+#         if mle.show:
+#             mle.draw(mle.init_proposal, x=x, name='initial')
+#
+#         mle.resampling(size=size, ratio=ratio, resample=resample)
+#         if stage >= 2:
+#             mle.disp('==NIS================================================NIS==')
+#             mle.proposal(bw=bw, factor=factor, local=local, gamma=gamma, kdf=kdf, alpha0=alpha0)
+#             Rf = target.pdf(target.rvs(size=size_est, random_state=seed)).mean()
+#             mle.nonparametric_estimation(Rf=Rf)
+#             if mle.show:
+#                 mle.draw(mle.nonpar_proposal, x=x, name='nonparametric')
+#
+#             if stage >= 3:
+#                 mle.disp('==RIS================================================RIS==')
+#                 mle.regression_estimation(alphaR=alphaR, alphaL=alphaL)
+#                 if mle.show:
+#                     mle.draw(mle.mix_proposal, x=x, name='regression')
+#
+#                 if stage >= 4:
+#                     mle.disp('==MLE================================================MLE==')
+#                     mle.likelihood_estimation(opt=True, NR=True)
+#
+#     return mle.result
 
 
 def run(inputs):
     begin = dt.now()
-    mean = np.zeros(7)
-    target = mvnorm(mean=mean)
-    init_proposal = mvnorm(mean=mean, cov=4)
-    x = np.linspace(-4, 4, 101)
-    result = experiment(seed=19971107, dim=mean.size, target=target,
-                        init_proposal=init_proposal, size_est=100000, x=x,
-                        size=500, ratio=100, resample=True,
-                        bw=inputs[0], factor='scott', local=False, gamma=1.0, kdf=0, alpha0=0.1,
-                        alphaR=10000.0, alphaL=0.1,
-                        stage=3, show=True)
+    # mean = np.zeros(7)
+    # target = mvnorm(mean=mean)
+    # init_proposal = mvnorm(mean=mean, cov=4)
+    # x = np.linspace(-4, 4, 101)
+    # result = experiment(seed=19971107, dim=mean.size, target=target,
+    #                     init_proposal=init_proposal, size_est=100000, x=x,
+    #                     size=500, ratio=100, resample=True,
+    #                     bw=inputs[0], factor='scott', local=False, gamma=1.0, kdf=0, alpha0=0.1,
+    #                     alphaR=10000.0, alphaL=0.1,
+    #                     stage=3, show=True)
     end = dt.now()
     print('Total spent: {}s (bw {:.2f})'
           .format((end - begin).seconds, inputs[0]))
-    return inputs + result
+    # return inputs + result
 
 
 def main():
