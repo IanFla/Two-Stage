@@ -129,7 +129,8 @@ class MLE:
         self.result.append(self.Prob)
         Err = np.abs(self.Prob - 0.05)
         if asym:
-            aVar = np.var(weights)
+            w = weights / np.sum(weights)
+            aVar = np.sum((w * (self.indicator(samples) - 0.05)) ** 2) * w.size
             self.result.append(aVar)
             aErr = np.sqrt(aVar / weights.size)
             ESS = 1 / np.sum((weights / np.sum(weights)) ** 2)

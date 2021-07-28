@@ -7,6 +7,7 @@ file = open('Data/DimGammaBw1', 'rb')
 Data = np.array(pickle.load(file))
 Dim = [2, 4, 6, 8, 10]
 Gamma = [0.1, 0.3, 0.5, 1.0]
+Bw = np.linspace(0.4, 3.2, 15)
 Names = ['dim', 'gamma', 'bw',
          'IS est', 'IS a-var', 'n0/ESS', 'n0/RSS', 'kernel number',
          'mean bdwth', 'kde ESS', 'sqrt(ISE/Rf)', 'KLD',
