@@ -58,7 +58,7 @@ def draw_main(dim):
         draw(dim=dim, gamma=gamma, name='NIS a-var', to_ax=axs[i+2], log=True)
         draw(dim=dim, gamma=gamma, name='MIS a-var', to_ax=axs[i+2], log=True)
         draw(dim=dim, gamma=gamma, name='RIS(O) a-var', to_ax=axs[i+2], log=True)
-        draw(dim=dim, gamma=gamma, name='RIS(O,u) a-var', to_ax=axs[i + 2], log=True)
+        draw(dim=dim, gamma=gamma, name='RIS(O,u) a-var', to_ax=axs[i+2], log=True)
         axs[i+2].legend()
         axs[i+2].set_title('gamma='+str(gamma))
 
