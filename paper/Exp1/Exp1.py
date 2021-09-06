@@ -365,35 +365,37 @@ def experiment(seed, dim, target,
 
 def run(inputs):
     begin = dt.now()
-    mean = np.zeros(7)
+    mean = np.zeros(inputs[0])
     target = mvnorm(mean=mean)
     init_proposal = mvnorm(mean=mean, cov=4)
     x = np.linspace(-4, 4, 101)
-    result = experiment(seed=19971107, dim=mean.size, target=target,
+    print(inputs)
+    result = experiment(seed=3033079628, dim=mean.size, target=target,
                         init_proposal=init_proposal, size_est=100000, x=x,
-                        size=500, ratio=100, resample=True,
-                        bw=inputs[1], factor='scott', local=False, gamma=1.0, kdf=inputs[0], alpha0=0.1,
+                        size=inputs[1], ratio=100, resample=True,
+                        bw=1.0, factor='scott', local=False, gamma=1.0, kdf=0, alpha0=0.1,
                         alphaR=10000.0, alphaL=0.1,
-                        stage=3, show=False)
+                        stage=4, show=False)
     end = dt.now()
-    print('Total spent: {}s (kdf {}, bw {:.2f})'
+    print('Total spent: {}s (dim {} size {})'
           .format((end - begin).seconds, inputs[0], inputs[1]))
     return inputs + result
 
 
 def main():
-    Kdf = [3, 4, 5, 8, 12, 20, 50, 100, 0]
-    Bw = np.linspace(0.4, 3.2, 15)
+    Dim = [2, 3, 4, 5, 6, 7, 8, 9, 10]
+    Size = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 140, 160, 180, 200, 240, 280, 320, 360, 400, 450, 500]
     inputs = []
-    for kdf in Kdf:
-        for bw in Bw:
-            inputs.append([kdf, bw])
+    for dim in Dim:
+        for size in Size:
+            inputs.append([dim, size])
 
     pool = multiprocessing.Pool(2)
     results = pool.map(run, inputs)
-    with open('Data/KdfBw7', 'wb') as file:
-        pickle.dump(results, file)
-        file.close()
+
+    # with open('DimSize', 'wb') as file:
+    #     pickle.dump(results, file)
+    #     file.close()
 
 
 if __name__ == '__main__':
