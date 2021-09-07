@@ -4,8 +4,8 @@ import pickle
 
 file = open('Data/DimSize', 'rb')
 Data = np.array(pickle.load(file))
-Dim = [2, 4, 6, 8]
-Size = [10, 20, 40, 60, 80, 100, 150, 200, 300]
+Dim = [2, 5, 8]
+Size = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 140, 160, 180, 200, 240, 280, 320, 360, 400, 450, 500]
 Names = ['dim', 'size',
          'IS est', 'IS a-var', 'n0/ESS', 'n0/RSS', 'kernel number',
          'mean bdwth', 'kde ESS', 'sqrt(ISE/Rf)', 'KLD',
@@ -25,11 +25,9 @@ def obtain(ind, name):
 
 def main():
     plt.style.use('ggplot')
-    fig, axs = plt.subplots(4, 2, figsize=(15, 20))
+    fig, axs = plt.subplots(3, 2, figsize=(15, 15))
     axs = axs.flatten()
     for i, dim in enumerate(Dim):
-        x, y = obtain(dim, 'IS est')
-        axs[2*i].loglog(x, np.abs(y - 1), label='IS est')
         x, y = obtain(dim, 'IS a-var')
         axs[2*i].loglog(x, np.sqrt(y / 20000), label='IS a-err')
         x, y = obtain(dim, 'NIS a-var')
@@ -43,8 +41,6 @@ def main():
         x, y = obtain(dim, 'RIS(L) a-var')
         axs[2 * i].loglog(x, np.sqrt(y / 20000), label='RIS(L) a-err')
 
-        x, y = obtain(dim, 'IS est')
-        axs[2*i+1].loglog(x, np.abs(y - 1), label='IS est')
         x, y = obtain(dim, 'IS a-var')
         axs[2*i+1].loglog(x, np.sqrt(y / 20000), label='IS a-err')
         x, y = obtain(dim, 'NIS est')
