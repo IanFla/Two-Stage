@@ -20,67 +20,6 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-class KDE:
-    def __init__(self, centers, weights, bw, factor='scott', local=False, gamma=None, ps=None, a=0.0, kdf=0):
-        self.centers = centers
-        self.weights = weights / weights.sum()
-        self.neff = 1 / np.sum(self.weights ** 2)
-        self.size, self.d = centers.shape
-        self.local = local
-        if self.local:
-            icov = np.linalg.inv(np.cov(self.centers.T, aweights=weights))
-            distances = []
-            for x1 in self.centers:
-                dists = []
-                for x2 in self.centers:
-                    dists.append(mahalanobis(x1, x2, icov))
-
-                distances.append(dists)
-
-            covs = []
-            for j, center in enumerate(self.centers):
-                index = np.argsort(distances[j])[:np.around(gamma * self.size).astype(np.int64)]
-                covs.append(np.cov(self.centers[index].T, aweights=weights[index]))
-
-        else:
-            covs = np.cov(centers.T, aweights=weights)
-            if ps is None:
-                ps = np.ones(self.size)
-
-            self.gm = gmean(ps)
-            self.lambda2s = (ps / self.gm) ** (-2 * a)
-
-        scott = self.neff ** (-1 / (self.d + 4))
-        silverman = scott * ((4 / (self.d + 2)) ** (1 / (self.d + 4)))
-        self.factor = bw * scott if factor == 'scott' else bw * silverman
-        self.factor = self.factor / (gamma ** (1 / self.d)) if self.local else self.factor
-        self.covs = (self.factor ** 2) * np.array(covs)
-        if kdf < 3:
-            self.kernel_pdf = lambda x, m, v: mvnorm.pdf(x=x, mean=m, cov=v)
-            self.kernel_rvs = lambda size, m, v: mvnorm.rvs(size=size, mean=m, cov=v)
-        elif kdf >= 3:
-            self.kernel_pdf = lambda x, m, v: mvt.pdf(x=x, loc=m, shape=(kdf-2)*v/kdf, df=kdf)
-            self.kernel_rvs = lambda size, m, v: mvt.rvs(size=size, loc=m, shape=(kdf-2)*v/kdf, df=kdf)
-
-    def pdf(self, samples):
-        density = np.zeros(samples.shape[0])
-        for j, center in enumerate(self.centers):
-            cov = self.covs[j] if self.local else self.lambda2s[j] * self.covs
-            density += self.weights[j] * self.kernel_pdf(x=samples, m=center, v=cov)
-
-        return density
-
-    def rvs(self, size):
-        sizes = np.unique(rs.systematic(self.weights, M=size), return_counts=True)[1]
-        cum_sizes = np.append(0, np.cumsum(sizes))
-        samples = np.zeros([size, self.d])
-        for j, center in enumerate(self.centers):
-            cov = self.covs[j] if self.local else self.lambda2s[j] * self.covs
-            samples[cum_sizes[j]:cum_sizes[j + 1]] = self.kernel_rvs(size=sizes[j], m=center, v=cov)
-
-        return samples
-
-
 class MLE:
     def __init__(self, dim, target, indicator, alpha, init_proposal, size_est, show=True):
         self.show = show
