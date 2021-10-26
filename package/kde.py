@@ -9,8 +9,8 @@ class KDE:
     def __init__(self, centers, weights, bw=1.0, factor='scott', local=False, gamma=0.3, df=0):
         self.centers = centers
         self.weights = weights / weights.sum()
-        self.ess = 1 / np.sum(self.weights ** 2)
-        self.m, self.d = centers.shape
+        self.ESS = 1 / np.sum(self.weights ** 2)
+        self.n, self.d = centers.shape
         self.local = local
         if self.local:
             icov = np.linalg.inv(np.cov(self.centers.T, aweights=weights))
@@ -24,13 +24,13 @@ class KDE:
 
             covs = []
             for j, center in enumerate(self.centers):
-                index = np.argsort(distances[j])[:np.around(gamma * self.m).astype(np.int64)]
+                index = np.argsort(distances[j])[:np.around(gamma * self.n).astype(np.int64)]
                 covs.append(np.cov(self.centers[index].T, aweights=weights[index]))
 
         else:
             covs = np.cov(centers.T, aweights=weights)
 
-        scott = self.ess ** (-1 / (self.d + 4))
+        scott = self.ESS ** (-1 / (self.d + 4))
         silverman = scott * ((4 / (self.d + 2)) ** (1 / (self.d + 4)))
         self.factor = bw * scott if factor == 'scott' else bw * silverman
         self.factor = self.factor / (gamma ** (1 / self.d)) if self.local else self.factor

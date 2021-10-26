@@ -1,38 +1,35 @@
 import numpy as np
 from matplotlib import pyplot as plt
-from datetime import datetime as dt
 from particles import resampling as rs
+import scipy.stats as st
+import scipy.optimize as opt
+from kde import KDE
+import sklearn.linear_model as lmd
+
+from datetime import datetime as dt
 import pickle
 import multiprocessing
-
-from scipy.stats import multivariate_normal as mvnorm
-from scipy.stats import multivariate_t as mvt
-from scipy.optimize import minimize, root
-from scipy.stats import gmean
-from scipy.spatial.distance import mahalanobis
-
-from sklearn.linear_model import LinearRegression as Linear
-from sklearn.linear_model import Ridge
-from sklearn.linear_model import Lasso
 
 import warnings
 warnings.filterwarnings("ignore")
 
 
-class MLE:
-    def __init__(self, dim, target, init_proposal, size_est, show=True):
+class Expectation:
+    def __init__(self, dim, target, fun, init_proposal, size_est, sn=False, show=True):
+        self.dim = dim
+        self.sn = sn
         self.show = show
         self.cache = []
         self.result = []
-        self.dim = dim
 
-        self.target = target.pdf
+        self.target = target
+        self.fun = fun
         self.init_proposal = init_proposal.pdf
         self.init_sampler = init_proposal.rvs
         self.size_est = size_est
 
         self.centers = None
-        self.weights = None
+        self.weights_kn = None
 
         self.kde = None
         self.nonpar_proposal = None
@@ -43,6 +40,7 @@ class MLE:
 
         self.samples_ = None
         self.target_ = None
+        self.fun_ = None
         self.proposal_ = None
         self.weights_ = None
 
@@ -62,56 +60,50 @@ class MLE:
         q[q == 0] = 1
         return p / q
 
-    def __estimate(self, weights, name, asym=True, check=True):
-        Z = np.mean(weights)
-        self.result.append(Z)
-        Err = np.abs(Z - 1)
-        if asym:
-            aVar = np.var(weights)
-            self.result.append(aVar)
-            aErr = np.sqrt(aVar / weights.size)
-            ESS = 1 / np.sum((weights / np.sum(weights)) ** 2)
-            self.disp('{} est: {:.4f}; err: {:.4f}; a-var: {:.4f}; a-err: {:.4f}; ESS: {:.0f}/{}'
-                      .format(name, Z, Err, aVar, aErr, ESS, weights.size))
+    def __estimate(self, weights, funs, name, asymp=True):
+        mu = np.sum(weights * funs) / np.sum(weights) if self.sn else np.mean(weights * funs)
+        self.result.append(mu)
+        if asymp:
+            avar = np.sum((weights * (funs - mu) / np.sum(weights)) ** 2) if self.sn else np.var(weights * funs)
+            self.result.append(avar)
+            aerr = np.sqrt(avar / weights.size)
+            self.disp('{} est: {:.4f}; a-var: {:.4f}; a-err: {:.4f}'.format(name, mu, avar, aerr))
         else:
-            self.disp('{} est: {:.4f}; err: {:.4f}'.format(name, Z, Err))
+            self.disp('{} est: {:.4f}'.format(name, mu))
 
-        if any(weights < 0) and check:
-            weights[weights < 0] = 0
-            Z = np.mean(weights)
-            Err = np.abs(Z - 1)
-            self.disp('{} est (Adjusted): {:.4f}; err: {:.4f}'.format(name, Z, Err))
-
-    def initial_estimation(self):
-        samples = self.init_sampler(self.size_est)
+    def initial_estimation(self, size_kn, ratio, resample=True):
+        size_est = ratio * size_kn
+        samples = self.init_sampler(size_est)
         weights = self.__divi(self.target(samples), self.init_proposal(samples))
-        self.__estimate(weights, 'IS')
+        funs = self.fun(samples)
+        self.__estimate(weights, funs, 'IS')
 
-        ESS = 1 / np.sum((weights / weights.sum()) ** 2)
-        RSS = weights.sum() / weights.max()
-        self.disp('Ratio reference: n0/ESS {:.0f} ~ n0/RSS {:.0f}'.format(self.size_est / ESS, self.size_est / RSS))
-        self.result.extend([self.size_est / ESS, self.size_est / RSS])
+        mu = self.result[-2]
+        opt_proposal = (lambda x: self.target(x) * np.abs(self.fun(x) - mu)) \
+            if self.sn else (lambda x: self.target(x) * np.abs(self.fun(x)))
 
-    def resampling(self, size, ratio, resample=True):
         if resample:
-            samples = self.init_sampler(ratio * size)
-            weights = self.__divi(self.target(samples), self.init_proposal(samples))
-            index, sizes = np.unique(rs.systematic(weights / weights.sum(), M=size), return_counts=True)
-            self.centers = samples[index]
-            self.weights = sizes
-            self.disp('Resampling rate: {}/{}'.format(self.weights.size, size))
-            self.result.append(self.weights.size)
-        else:
-            self.centers = self.init_sampler(size)
-            self.weights = self.__divi(self.target(self.centers), self.init_proposal(self.centers))
+            weights_kn = self.__divi(opt_proposal(samples), self.init_proposal(samples))
+            ESS = 1 / np.sum((weights_kn / weights_kn.sum()) ** 2)
+            RSS = weights_kn.sum() / weights_kn.max()
+            self.disp('Ratio reference: n0/ESS {:.0f} ~ n0/RSS {:.0f}'.format(size_est / ESS, size_est / RSS))
 
-    def proposal(self, bw=1.0, factor='scott', local=False, gamma=0.3, kdf=0, alpha0=0.1):
-        self.kde = KDE(self.centers, self.weights, bw=bw, factor=factor, local=local, gamma=gamma, kdf=kdf)
-        covs = self.kde.covs.mean(axis=0) if local else self.kde.lambda2s.mean() * self.kde.covs
-        bdwths = np.sqrt(np.diag(covs))
-        self.disp('KDE: (mean bdwth: {:.4f}, factor {:.4f}, ESS {:.0f}/{})'
-                  .format(np.mean(bdwths), self.kde.factor, self.kde.neff, self.kde.size))
-        self.result.extend([np.mean(bdwths), self.kde.neff])
+            index, sizes = np.unique(rs.stratified(weights_kn / weights_kn.sum(), M=size_kn), return_counts=True)
+            self.centers = samples[index]
+            self.weights_kn = sizes
+            self.disp('Resampling rate: {}/{}'.format(self.weights_kn.size, size_kn))
+            self.result.append(self.weights_kn.size)
+        else:
+            self.centers = self.init_sampler(size_kn)
+            self.weights_kn = self.__divi(opt_proposal(self.centers), self.init_proposal(self.centers))
+
+    def proposal(self, bw=1.0, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1):
+        self.kde = KDE(self.centers, self.weights_kn, bw=bw, factor=factor, local=local, gamma=gamma, df=df)
+        bdwths = np.sqrt(np.diag(self.kde.covs.mean(axis=0) if local else self.kde.covs))
+        self.disp('KDE: (bdwth: {:.4f} ({:.4f}), factor {:.4f})'
+                  .format(bdwths[0], np.mean(bdwths[1:]), self.kde.factor))
+        self.result.extend([bdwths[0], np.mean(bdwths[1:])])
+
         self.nonpar_proposal = self.kde.pdf
         self.nonpar_sampler = self.kde.rvs
         self.mix_proposal = lambda x: alpha0 * self.init_proposal(x) + (1 - alpha0) * self.nonpar_proposal(x)
@@ -121,7 +113,7 @@ class MLE:
         def controls(x):
             out = np.zeros([self.centers.shape[0], x.shape[0]])
             for j, center in enumerate(self.centers):
-                cov = self.kde.covs[j] if local else self.kde.lambda2s[j] * self.kde.covs
+                cov = self.kde.covs[j] if local else self.kde.covs
                 out[j] = self.kde.kernel_pdf(x=x, m=center, v=cov)
 
             return out - self.mix_proposal(x)
@@ -332,9 +324,9 @@ def main():
     pool = multiprocessing.Pool(2)
     results = pool.map(run, inputs)
 
-    # with open('DimSize', 'wb') as file:
-    #     pickle.dump(results, file)
-    #     file.close()
+    with open('DimSize', 'wb') as file:
+        pickle.dump(results, file)
+        file.close()
 
 
 if __name__ == '__main__':
