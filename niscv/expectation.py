@@ -1,17 +1,16 @@
 import numpy as np
 from matplotlib import pyplot as plt
 from particles import resampling as rs
-import scipy.stats as st
-import scipy.optimize as opt
 from kde import KDE
-import sklearn.linear_model as lmd
+# import sklearn.linear_model as lmd
+# import scipy.optimize as opt
 
-from datetime import datetime as dt
-import pickle
-import multiprocessing
-
-import warnings
-warnings.filterwarnings("ignore")
+import scipy.stats as st
+# from datetime import datetime as dt
+# import pickle
+# import multiprocessing
+# import warnings
+# warnings.filterwarnings("ignore")
 
 
 class Expectation:
@@ -28,6 +27,7 @@ class Expectation:
         self.init_sampler = init_proposal.rvs
         self.size_est = size_est
 
+        self.opt_proposal = None
         self.centers = None
         self.weights_kn = None
 
@@ -64,10 +64,11 @@ class Expectation:
         mu = np.sum(weights * funs) / np.sum(weights) if self.sn else np.mean(weights * funs)
         self.result.append(mu)
         if asymp:
-            avar = np.sum((weights * (funs - mu) / np.sum(weights)) ** 2) if self.sn else np.var(weights * funs)
+            avar = np.mean((weights * (funs - mu) / np.mean(weights)) ** 2) if self.sn else np.var(weights * funs)
             self.result.append(avar)
             aerr = np.sqrt(avar / weights.size)
-            self.disp('{} est: {:.4f}; a-var: {:.4f}; a-err: {:.4f}'.format(name, mu, avar, aerr))
+            self.disp('{} est: {:.4f}; a-var: {:.4f}; 95% C.I.: [{:.4f}, {:.4f}]'
+                      .format(name, mu, avar, mu - 1.96 * aerr, mu + 1.96 * aerr))
         else:
             self.disp('{} est: {:.4f}'.format(name, mu))
 
@@ -79,11 +80,11 @@ class Expectation:
         self.__estimate(weights, funs, 'IS')
 
         mu = self.result[-2]
-        opt_proposal = (lambda x: self.target(x) * np.abs(self.fun(x) - mu)) \
+        self.opt_proposal = (lambda x: self.target(x) * np.abs(self.fun(x) - mu)) \
             if self.sn else (lambda x: self.target(x) * np.abs(self.fun(x)))
 
         if resample:
-            weights_kn = self.__divi(opt_proposal(samples), self.init_proposal(samples))
+            weights_kn = self.__divi(self.opt_proposal(samples), self.init_proposal(samples))
             ESS = 1 / np.sum((weights_kn / weights_kn.sum()) ** 2)
             RSS = weights_kn.sum() / weights_kn.max()
             self.disp('Ratio reference: n0/ESS {:.0f} ~ n0/RSS {:.0f}'.format(size_est / ESS, size_est / RSS))
@@ -95,9 +96,9 @@ class Expectation:
             self.result.append(self.weights_kn.size)
         else:
             self.centers = self.init_sampler(size_kn)
-            self.weights_kn = self.__divi(opt_proposal(self.centers), self.init_proposal(self.centers))
+            self.weights_kn = self.__divi(self.opt_proposal(self.centers), self.init_proposal(self.centers))
 
-    def proposal(self, bw=1.0, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1):
+    def density_estimation(self, bw=1.0, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1):
         self.kde = KDE(self.centers, self.weights_kn, bw=bw, factor=factor, local=local, gamma=gamma, df=df)
         bdwths = np.sqrt(np.diag(self.kde.covs.mean(axis=0) if local else self.kde.covs))
         self.disp('KDE: (bdwth: {:.4f} ({:.4f}), factor {:.4f})'
@@ -120,213 +121,59 @@ class Expectation:
 
         self.controls = controls
 
-    def nonparametric_estimation(self, Rf=1.0):
+    def nonparametric_estimation(self):
         samples = self.nonpar_sampler(self.size_est)
-        target = self.target(samples)
-        proposal = self.nonpar_proposal(samples)
-        ISE = np.mean(proposal - 2 * target) + Rf
-        weights = self.__divi(target, proposal)
-        KLD = np.mean(weights * np.log(weights + 1.0 * (weights == 0)))
-        self.disp('sqrt(ISE/Rf): {:.4f}; KLD: {:.4f}'.format(np.sqrt(ISE/Rf), KLD))
-        self.result.extend([np.sqrt(ISE / Rf), KLD])
-        self.__estimate(weights, 'NIS')
+        weights = self.__divi(self.target(samples), self.nonpar_proposal(samples))
+        funs = self.fun(samples)
+        self.__estimate(weights, funs, 'NIS')
 
         self.samples_ = self.mix_sampler(self.size_est)
         self.target_ = self.target(self.samples_)
+        self.fun_ = self.fun(self.samples_)
         self.proposal_ = self.mix_proposal(self.samples_)
         self.weights_ = self.__divi(self.target_, self.proposal_)
-        self.__estimate(self.weights_, 'MIS')
+        self.__estimate(self.weights_, self.fun_, 'MIS')
 
-    def regression_estimation(self, alphaR, alphaL):
-        self.controls_ = self.controls(self.samples_)
-        X = (self.__divi(self.controls_, self.proposal_)).T
-        standard_X = X / np.linalg.norm(X, axis=0)
-        lbds = np.linalg.eigvals(standard_X.T.dot(standard_X))
-        del standard_X
-        etas = np.sqrt(lbds.max(initial=0) / lbds)
-        self.disp('Condition index: (min {:.4f}, median {:.4f}, mean {:.4f}, max {:.4f}, [>30] {}/{})'
-                  .format(etas.min(), np.median(etas), etas.mean(), etas.max(), np.sum(etas > 30), etas.size))
-        self.result.append(np.sum(etas > 30))
+    def draw(self, grid_x, name, d=0):
+        grid_X = np.zeros([grid_x.size, self.dim])
+        grid_X[:, d] = grid_x
+        opt_proposal = self.opt_proposal(grid_X)
 
-        y = self.weights_
-        self.regO = Linear().fit(X, y)
-        self.regR = Ridge(alpha=alphaR).fit(X, y)
-        self.regL = Lasso(alpha=alphaL).fit(X, y)
-        self.disp('Ordinary R2: {:.4f}; Ridge R2: {:.4f}; Lasso R2: {:.4f}'
-                  .format(self.regO.score(X, y), self.regR.score(X, y), self.regL.score(X, y)))
-        self.result.extend([self.regO.score(X, y), self.regR.score(X, y), self.regL.score(X, y)])
-
-        weights = y - X.dot(self.regO.coef_)
-        self.__estimate(weights, 'RIS(Ord)', check=False)
-        weights = y - X.dot(self.regR.coef_)
-        self.__estimate(weights, 'RIS(Rid)', check=False)
-        weights = y - X.dot(self.regL.coef_)
-        self.__estimate(weights, 'RIS(Las)', check=False)
-
-        del X, y, weights
-        samples = self.mix_sampler(self.size_est)
-        proposal = self.mix_proposal(samples)
-        y2 = self.__divi(self.target(samples), proposal)
-        X2 = self.__divi(self.controls(samples), proposal).T
-        weights = y2 - X2.dot(self.regO.coef_)
-        self.__estimate(weights, 'RIS(Ord, unbiased)', check=False)
-        weights = y2 - X2.dot(self.regR.coef_)
-        self.__estimate(weights, 'RIS(Rid, unbiased)', check=False)
-        weights = y2 - X2.dot(self.regL.coef_)
-        self.__estimate(weights, 'RIS(Las, unbiased)', check=False)
-
-    def likelihood_estimation(self, opt=True, NR=True):
-        target = lambda zeta: -np.mean(np.log(self.proposal_ + zeta.dot(self.controls_)))
-        gradient = lambda zeta: -np.mean(self.__divi(self.controls_, self.proposal_ + zeta.dot(self.controls_)), axis=1)
-        hessian = lambda zeta: self.__divi(self.controls_, (self.proposal_ + zeta.dot(self.controls_))
-                                           ** 2).dot(self.controls_.T) / self.controls_.shape[1]
-        zeta0 = np.zeros(self.controls_.shape[0])
-        grad0 = gradient(zeta0)
-        self.disp('MLE reference:')
-        self.disp('Origin: value: {:.4f}; grad: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f})'
-                  .format(target(zeta0), grad0.min(), grad0.mean(), grad0.max(), grad0.std()))
-
-        self.disp('')
-        self.disp('Theoretical results:')
-        X = (self.__divi(self.controls_, self.proposal_)).T
-        zeta1 = np.linalg.solve(np.cov(X.T, bias=True), X.mean(axis=0))
-        self.disp('MLE(The) zeta: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f}, norm {:.4f})'
-                  .format(zeta1.min(), zeta1.mean(), zeta1.max(), zeta1.std(), np.sqrt(np.sum(zeta1 ** 2))))
-        grad1 = gradient(zeta1)
-        self.disp('Theory: value: {:.4f}; grad: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f})'
-                  .format(target(zeta1), grad1.min(), grad1.mean(), grad1.max(), grad1.std()))
-        weights = self.weights_ * (1 - (X - X.mean(axis=0)).dot(zeta1))
-        self.disp('Reg weights: (min {:.4f}, mean {:.4f}, max {:.4f}, [<0] {}/{})'
-                  .format(weights.min(), weights.mean(), weights.max(), np.sum(weights < 0), weights.size))
-        self.__estimate(weights, 'RIS(The)', asym=False)
-        weights = self.__divi(self.target_, self.proposal_ + zeta1.dot(self.controls_))
-        self.disp('MLE weights (The): (min {:.4f}, mean {:.4f}, max {:.4f}, [<0] {}/{})'
-                  .format(weights.min(), weights.mean(), weights.max(), np.sum(weights < 0), weights.size))
-        self.__estimate(weights, 'MLE(The)', asym=False)
-
-        if opt:
-            zeta2 = zeta0 if np.isnan(target(zeta1)) else zeta1
-            begin = dt.now()
-            if NR:
-                res = root(lambda zeta: (gradient(zeta), hessian(zeta)), zeta2, method='lm', jac=True)
-            else:
-                cons = ({'type': 'ineq', 'fun': lambda zeta: self.proposal_ + zeta.dot(self.controls_),
-                         'jac': lambda zeta: self.controls_.T})
-                res = minimize(target, zeta2, method='SLSQP', jac=gradient, constraints=cons,
-                               options={'ftol': 1e-8, 'maxiter': 1000})
-
-            end = dt.now()
-            self.disp('')
-            self.disp('Optimization results (spent {} seconds):'.format((end - begin).seconds))
-            if res['success']:
-                zeta2 = res['x']
-                self.disp('MLE(Opt) zeta: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f}, norm {:.4f})'
-                          .format(zeta2.min(), zeta2.mean(), zeta2.max(), zeta2.std(), np.sqrt(np.sum(zeta2 ** 2))))
-                self.disp('Dist(zeta(Opt),zeta(The))={:.4f}'.format(np.sqrt(np.sum((zeta2 - zeta1) ** 2))))
-                grad2 = gradient(zeta2)
-                self.disp('Optimal: value: {:.4f}; grad: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f})'
-                          .format(target(zeta2), grad2.min(), grad2.mean(), grad2.max(), grad2.std()))
-                weights = self.__divi(self.target_, self.proposal_ + zeta2.dot(self.controls_))
-                self.disp('MLE weights (The): (min {:.4f}, mean {:.4f}, max {:.4f}, [<0] {}/{})'
-                          .format(weights.min(), weights.mean(), weights.max(), np.sum(weights < 0), weights.size))
-                self.__estimate(weights, 'MLE(Opt)', asym=False)
-            else:
-                self.disp('MLE fail')
-
-    def draw(self, proposal, x, name, dim=0):
-        X = np.zeros([x.size, self.dim])
-        X[:, dim] = x
         fig, ax = plt.subplots(figsize=(7, 4))
-        ax.plot(x, self.target(X))
-        ax.plot(x, proposal(X))
-        if name == 'nonparametric':
-            ax.plot(x, self.mix_proposal(X))
-            ax.legend(['target', 'nonparametric proposal', 'mixture proposal'])
-        elif name == 'regression':
-            controls_ = self.controls(X)
-            proposalO = self.regO.coef_.dot(controls_) + self.regO.intercept_ * proposal(X)
-            proposalR = self.regR.coef_.dot(controls_) + self.regR.intercept_ * proposal(X)
-            proposalL = self.regL.coef_.dot(controls_) + self.regL.intercept_ * proposal(X)
-            ax.plot(x, proposalO)
-            ax.plot(x, proposalR)
-            ax.plot(x, proposalL)
-            ax.legend(['target', 'mixture proposal', 'ordinary regression', 'ridge regression', 'lasso regression'])
+        ax.plot(grid_x, opt_proposal)
+        if name == 'initial':
+            init_proposal = self.init_proposal(grid_X)
+            ax.plot(grid_x, opt_proposal.max() * init_proposal / init_proposal.max())
+            ax.legend(['optimal proposal', 'initial proposal'])
+        elif name == 'nonparametric':
+            nonpar_proposal = self.nonpar_proposal(grid_X)
+            mix_proposal = self.mix_proposal(grid_X)
+            ax.plot(grid_x, opt_proposal.max() * nonpar_proposal / nonpar_proposal.max())
+            ax.plot(grid_x, opt_proposal.max() * mix_proposal / mix_proposal.max())
+            ax.legend(['optimal proposal', 'nonparametric proposal', 'mixture proposal'])
         else:
-            ax.legend(['target', '{} proposal'.format(name)])
+            print('name err! ')
 
-        ax.set_title('{}-D target and {} proposal ({}th slicing)'.format(self.dim, name, dim + 1))
+        ax.set_title('{}-D {} estimation ({}th slicing)'.format(self.dim, name, d + 1))
         plt.show()
 
 
-def experiment(seed, dim, target,
-               init_proposal, size_est, x,
-               size, ratio, resample,
-               bw, factor, local, gamma, kdf, alpha0,
-               alphaR, alphaL,
-               stage=4, show=False):
-    np.random.seed(seed)
-    mle = MLE(dim, target, init_proposal, size_est=size_est, show=show)
-    if stage >= 1:
-        mle.disp('==IS==================================================IS==')
-        mle.initial_estimation()
-        if mle.show:
-            mle.draw(mle.init_proposal, x=x, name='initial')
-
-        mle.resampling(size=size, ratio=ratio, resample=resample)
-        if stage >= 2:
-            mle.disp('==NIS================================================NIS==')
-            mle.proposal(bw=bw, factor=factor, local=local, gamma=gamma, kdf=kdf, alpha0=alpha0)
-            Rf = target.pdf(target.rvs(size=size_est, random_state=seed)).mean()
-            mle.nonparametric_estimation(Rf=Rf)
-            if mle.show:
-                mle.draw(mle.nonpar_proposal, x=x, name='nonparametric')
-
-            if stage >= 3:
-                mle.disp('==RIS================================================RIS==')
-                mle.regression_estimation(alphaR=alphaR, alphaL=alphaL)
-                if mle.show:
-                    mle.draw(mle.mix_proposal, x=x, name='regression')
-
-                if stage >= 4:
-                    mle.disp('==MLE================================================MLE==')
-                    mle.likelihood_estimation(opt=True, NR=True)
-
-    return mle.result
-
-
-def run(inputs):
-    begin = dt.now()
-    mean = np.zeros(inputs[0])
-    target = mvnorm(mean=mean)
-    init_proposal = mvnorm(mean=mean, cov=4)
-    x = np.linspace(-4, 4, 101)
-    print(inputs)
-    result = experiment(seed=3033079628, dim=mean.size, target=target,
-                        init_proposal=init_proposal, size_est=100000, x=x,
-                        size=inputs[1], ratio=100, resample=True,
-                        bw=1.0, factor='scott', local=False, gamma=1.0, kdf=0, alpha0=0.1,
-                        alphaR=10000.0, alphaL=0.1,
-                        stage=4, show=False)
-    end = dt.now()
-    print('Total spent: {}s (dim {} size {})'
-          .format((end - begin).seconds, inputs[0], inputs[1]))
-    return inputs + result
+def experiment(dim, size_est, sn, size_kn, ratio):
+    mean = np.zeros(dim)
+    target = st.multivariate_normal(mean=mean).pdf
+    fun = lambda x: x[:, 0]
+    init_proposal = st.multivariate_normal(mean=mean, cov=4)
+    grid_x = np.linspace(-5, 5, 200)
+    exp = Expectation(dim, target, fun, init_proposal, size_est, sn=sn, show=True)
+    exp.initial_estimation(size_kn, ratio, resample=True)
+    exp.draw(grid_x, name='initial')
+    exp.density_estimation(bw=1.0, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1)
+    exp.nonparametric_estimation()
+    exp.draw(grid_x, name='nonparametric')
 
 
 def main():
-    Dim = [2, 3, 4, 5, 6, 7, 8, 9, 10]
-    Size = [10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 120, 140, 160, 180, 200, 240, 280, 320, 360, 400, 450, 500]
-    inputs = []
-    for dim in Dim:
-        for size in Size:
-            inputs.append([dim, size])
-
-    pool = multiprocessing.Pool(2)
-    results = pool.map(run, inputs)
-
-    with open('DimSize', 'wb') as file:
-        pickle.dump(results, file)
-        file.close()
+    experiment(dim=2, size_est=10000, sn=True, size_kn=1000, ratio=20)
 
 
 if __name__ == '__main__':
