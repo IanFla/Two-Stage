@@ -261,7 +261,7 @@ class Expectation:
 def experiment(dim, size_est, sn, show, size_kn, ratio):
     mean = np.zeros(dim)
     target = lambda x: st.multivariate_normal(mean=mean).pdf(x)
-    fun = lambda x: x[:, 0] ** 2
+    fun = lambda x: x[:, 0] > 0.5
     init_proposal = st.multivariate_normal(mean=mean, cov=4)
     grid_x = np.linspace(-5, 5, 200)
     exp = Expectation(dim, target, fun, init_proposal, size_est, sn=sn, show=show)
@@ -285,7 +285,7 @@ def experiment(dim, size_est, sn, show, size_kn, ratio):
 def main(sn):
     np.random.seed(3033079628)
     results = []
-    for i in range(200):
+    for i in range(100):
         print(i + 1)
         result = experiment(dim=4, size_est=25000, sn=sn, show=False, size_kn=500, ratio=20)
         if sn:
@@ -297,18 +297,19 @@ def main(sn):
 
 
 if __name__ == '__main__':
+    truth = st.norm.cdf(-0.5)
     R = main(sn=True)
 
     aVar = R[:, 1::2]
     mean_aVar = aVar.mean(axis=0)
     std_aVar = aVar.std(axis=0)
-    print('a-var(l):', mean_aVar - 1.96 * std_aVar)
-    print('a-var(m):', mean_aVar)
-    print('a-var(r):', mean_aVar + 1.96 * std_aVar)
+    print('a-var(l):', np.round(mean_aVar - 1.96 * std_aVar, 4))
+    print('a-var(m):', np.round(mean_aVar, 4))
+    print('a-var(r):', np.round(mean_aVar + 1.96 * std_aVar, 4))
 
-    MSE = np.mean((R[:, ::2] - 1) ** 2, axis=0)
-    print('nMSE:', np.append(10000 * MSE[0], 25000 * MSE[1:]))
+    MSE = np.mean((R[:, ::2] - truth) ** 2, axis=0)
+    print('nMSE:', np.round(np.append(10000 * MSE[0], 25000 * MSE[1:]), 4))
 
     aErr = np.sqrt(np.hstack([aVar[:, 0].reshape([-1, 1]) / 10000, aVar[:, 1:] / 25000]))
-    Flag = (1 >= R[:, ::2] - 1.96 * aErr) & (1 <= R[:, ::2] + 1.96 * aErr)
+    Flag = (truth >= R[:, ::2] - 1.96 * aErr) & (truth <= R[:, ::2] + 1.96 * aErr)
     print('C.I.:', Flag.mean(axis=0))
