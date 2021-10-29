@@ -283,9 +283,9 @@ def experiment(dim, size_est, sn, show, size_kn, ratio):
 
 
 def main(sn):
-    np.random.seed(19971107)
+    np.random.seed(3033079628)
     results = []
-    for i in range(100):
+    for i in range(200):
         print(i + 1)
         result = experiment(dim=4, size_est=25000, sn=sn, show=False, size_kn=500, ratio=20)
         if sn:
