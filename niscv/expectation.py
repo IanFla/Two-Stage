@@ -285,8 +285,9 @@ def experiment(dim, size_est, sn, size_kn, ratio):
 def main():
     np.random.seed(19971107)
     results = []
-    for i in range(10):
-        result = experiment(dim=5, size_est=25000, sn=False, size_kn=500, ratio=20)
+    for i in range(100):
+        print(i + 1)
+        result = experiment(dim=3, size_est=25000, sn=False, size_kn=500, ratio=20)
         results.append(result[[0, 1, 5, 6, 7, 8, 10, 11, 14, 11]])
 
     return np.array(results)
@@ -294,3 +295,8 @@ def main():
 
 if __name__ == '__main__':
     R = main()
+    plt.boxplot(R[:, 1::2])
+    plt.show()
+    print(R[:, 1::2].mean(axis=0))
+    MSE = np.mean((R[:, ::2] - 1) ** 2, axis=0)
+    print(np.append(10000 * MSE[0], 25000 * MSE[1:]))
