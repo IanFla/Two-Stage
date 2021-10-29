@@ -76,8 +76,8 @@ class Expectation:
             self.mu = np.sum(weights * funs - X.dot(self.reg1.coef_)) / np.sum(weights - X.dot(self.reg2.coef_)) \
                 if self.sn else np.mean(weights * funs - X.dot(self.reg.coef_))
             self.result.append(self.mu)
-            self.avar = np.mean(((weights * (funs - self.mu) - X.dot(self.reg1.coef_)) /
-                            np.mean(weights - X.dot(self.reg2.coef_))) ** 2) \
+            self.avar = np.mean(((weights * (funs - self.mu) - X.dot(self.reg1.coef_ - self.mu * self.reg2.coef_)) /
+                                 np.mean(weights - X.dot(self.reg2.coef_))) ** 2) \
                 if self.sn else np.var(weights * funs - X.dot(self.reg.coef_))
             self.result.append(self.avar)
             aerr = np.sqrt(self.avar / weights.size)
@@ -88,7 +88,7 @@ class Expectation:
             self.result.append(mu)
             aerr = np.sqrt(self.avar / weights.size)
             self.disp('{} est: {:.4f}; 95% C.I.: [{:.4f}, {:.4f}]'
-                      .format(name, mu,  self.mu - 1.96 * aerr, self.mu + 1.96 * aerr))
+                      .format(name, mu,  mu - 1.96 * aerr, mu + 1.96 * aerr))
 
     def initial_estimation(self, size_kn, ratio, resample=True):
         size_est = ratio * size_kn
@@ -260,24 +260,37 @@ class Expectation:
 
 def experiment(dim, size_est, sn, size_kn, ratio):
     mean = np.zeros(dim)
-    target = lambda x: 2 * st.multivariate_normal(mean=mean).pdf(x)
-    fun = lambda x: x[:, 0]
+    target = lambda x: st.multivariate_normal(mean=mean).pdf(x)
+    fun = lambda x: x[:, 0] ** 2
     init_proposal = st.multivariate_normal(mean=mean, cov=4)
     grid_x = np.linspace(-5, 5, 200)
-    exp = Expectation(dim, target, fun, init_proposal, size_est, sn=sn, show=True)
+    exp = Expectation(dim, target, fun, init_proposal, size_est, sn=sn, show=False)
     exp.initial_estimation(size_kn, ratio, resample=True)
-    exp.draw(grid_x, name='initial')
+    if exp.show:
+        exp.draw(grid_x, name='initial')
+
     exp.density_estimation(bw=1.0, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1)
     exp.nonparametric_estimation()
-    exp.draw(grid_x, name='nonparametric')
+    if exp.show:
+        exp.draw(grid_x, name='nonparametric')
+
     exp.regression_estimation()
-    exp.draw(grid_x, name='regression')
+    if exp.show:
+        exp.draw(grid_x, name='regression')
+
     exp.likelihood_estimation(optimize=True, NR=True)
+    return np.array(exp.result)
 
 
 def main():
-    experiment(dim=7, size_est=10000, sn=True, size_kn=1000, ratio=20)
+    np.random.seed(19971107)
+    results = []
+    for i in range(10):
+        result = experiment(dim=5, size_est=25000, sn=False, size_kn=500, ratio=20)
+        results.append(result[[0, 1, 5, 6, 7, 8, 10, 11, 14, 11]])
+
+    return np.array(results)
 
 
 if __name__ == '__main__':
-    main()
+    R = main()
