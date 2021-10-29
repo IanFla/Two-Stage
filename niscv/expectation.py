@@ -42,8 +42,8 @@ class Expectation:
         self.fun_ = None
         self.proposal_ = None
         self.weights_ = None
-
         self.controls_ = None
+
         self.reg = None
         self.reg1 = None
         self.reg2 = None

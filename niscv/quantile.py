@@ -3,10 +3,11 @@ from matplotlib import pyplot as plt
 from wquantiles import quantile
 from particles import resampling as rs
 from kde import KDE
+import sklearn.linear_model as lm
 from datetime import datetime as dt
 import scipy.optimize as opt
 
-# import scipy.stats as st
+import scipy.stats as st
 # import pickle
 # import multiprocessing
 import warnings
@@ -42,9 +43,9 @@ class Quantile:
         self.statistics_ = None
         self.proposal_ = None
         self.weights_ = None
-
         self.controls_ = None
         self.VaR = None
+        self.reg_proposal = None
 
     def disp(self, text):
         if self.show:
@@ -71,13 +72,11 @@ class Quantile:
         size_est = ratio * size_kn
         samples = self.init_sampler(size_est)
         weights = self.__divi(self.target(samples), self.init_proposal(samples))
-        funs = self.fun(samples)
-        self.__estimate(weights, funs, 'IS')
+        statistics = self.statistic(samples)
+        self.__estimate(weights, statistics, 'IS')
 
-        mu = self.result[-2]
-        self.opt_proposal = (lambda x: self.target(x) * np.abs(self.fun(x) - mu)) \
-            if self.sn else (lambda x: self.target(x) * np.abs(self.fun(x)))
-
+        VaR = self.result[-2]
+        self.opt_proposal = lambda x: self.target(x) * np.abs((self.statistic(x) <= VaR) - self.alpha)
         weights_kn = self.__divi(self.opt_proposal(samples), self.init_proposal(samples))
         ESS = 1 / np.sum((weights_kn / weights_kn.sum()) ** 2)
         RSS = weights_kn.sum() / weights_kn.max()
@@ -115,33 +114,40 @@ class Quantile:
     def nonparametric_estimation(self):
         samples = self.nonpar_sampler(self.size_est)
         weights = self.__divi(self.target(samples), self.nonpar_proposal(samples))
-        funs = self.fun(samples)
-        self.__estimate(weights, funs, 'NIS')
+        statistics = self.statistic(samples)
+        self.__estimate(weights, statistics, 'NIS')
 
-        self.samples_ = self.mix_sampler(self.size_est)
-        self.target_ = self.target(self.samples_)
-        self.fun_ = self.fun(self.samples_)
-        self.proposal_ = self.mix_proposal(self.samples_)
+        samples_ = self.mix_sampler(self.size_est)
+        self.target_ = self.target(samples_)
+        self.statistics_ = self.statistic(samples_)
+        self.proposal_ = self.mix_proposal(samples_)
         self.weights_ = self.__divi(self.target_, self.proposal_)
-        self.__estimate(self.weights_, self.fun_, 'MIS')
+        self.__estimate(self.weights_, self.statistics_, 'MIS')
+        self.controls_ = self.controls(samples_)
+        self.VaR = self.result[-2]
 
     def regression_estimation(self):
-        self.controls_ = self.controls(self.samples_)
         X = (self.__divi(self.controls_, self.proposal_)).T
         w = self.weights_
-        y = w * self.fun(self.samples_)
+        y = w * (self.statistics_ <= self.VaR)
+        yw = y - self.alpha * w
 
-        if self.sn:
-            self.reg1 = lm.LinearRegression().fit(X, y)
-            self.reg2 = lm.LinearRegression().fit(X, w)
-            self.disp('Regression R2: {:.4f} / {:.4f}'.format(self.reg1.score(X, y), self.reg2.score(X, w)))
-            self.result.extend([self.reg1.score(X, y), self.reg2.score(X, w)])
-        else:
-            self.reg = lm.LinearRegression().fit(X, y)
-            self.disp('Regression R2: {:.4f}'.format(self.reg.score(X, y)))
-            self.result.append(self.reg.score(X, y))
+        reg1 = lm.LinearRegression().fit(X, y)
+        reg2 = lm.LinearRegression().fit(X, w)
+        reg3 = lm.LinearRegression().fit(X, yw)
+        self.disp('Regression R2: {:.4f} ({:.4f} / {:.4f})'
+                  .format(reg3.score(X, yw), reg1.score(X, y), reg2.score(X, w)))
+        self.result.extend([reg3.score(X, yw), reg1.score(X, y), reg2.score(X, w)])
+        self.reg_proposal = lambda x: reg3.coef_.dot(self.controls(x))
 
-        self.__estimate(self.weights_, self.fun_, 'RIS', mode='regression')
+        zeta = np.linalg.solve(np.cov(X.T, bias=True), X.mean(axis=0))
+        weights = self.weights_ * (1 - (X - X.mean(axis=0)).dot(zeta))
+        self.disp('Reg weights: (min {:.4f}, mean {:.4f}, max {:.4f}, [<0] {}/{})'
+                  .format(weights.min(), weights.mean(), weights.max(), np.sum(weights < 0), weights.size))
+        self.__estimate(weights, self.statistics_, 'RIS', asym=False)
+        avar = np.mean(((yw - X.dot(reg3.coef_)) / np.mean(w - X.dot(reg2.coef_))) ** 2)
+        self.disp('RIS a-var: {:.4f}'.format(avar))
+        self.result.append(avar)
 
     def likelihood_estimation(self, optimize=True, NR=True):
         target = lambda zeta: -np.mean(np.log(self.proposal_ + zeta.dot(self.controls_)))
@@ -149,56 +155,28 @@ class Quantile:
         hessian = lambda zeta: self.__divi(self.controls_, (self.proposal_ + zeta.dot(self.controls_))
                                            ** 2).dot(self.controls_.T) / self.controls_.shape[1]
         zeta0 = np.zeros(self.controls_.shape[0])
-        grad0 = gradient(zeta0)
-        self.disp('')
-        self.disp('MLE reference:')
-        self.disp('Origin: value: {:.4f}; grad: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f})'
-                  .format(target(zeta0), grad0.min(), grad0.mean(), grad0.max(), grad0.std()))
-
-        self.disp('')
-        self.disp('Theoretical results:')
-        X = (self.__divi(self.controls_, self.proposal_)).T
-        zeta1 = np.linalg.solve(np.cov(X.T, bias=True), X.mean(axis=0))
-        self.disp('MLE(The) zeta: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f}, norm {:.4f})'
-                  .format(zeta1.min(), zeta1.mean(), zeta1.max(), zeta1.std(), np.sqrt(np.sum(zeta1 ** 2))))
-        grad1 = gradient(zeta1)
-        self.disp('Theory: value: {:.4f}; grad: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f})'
-                  .format(target(zeta1), grad1.min(), grad1.mean(), grad1.max(), grad1.std()))
-        weights = self.weights_ * (1 - (X - X.mean(axis=0)).dot(zeta1))
-        self.disp('Reg weights: (min {:.4f}, mean {:.4f}, max {:.4f}, [<0] {}/{})'
-                  .format(weights.min(), weights.mean(), weights.max(), np.sum(weights < 0), weights.size))
-        self.__estimate(weights, self.fun_, 'RIS(The)', mode='likelihood')
-        weights = self.__divi(self.target_, self.proposal_ + zeta1.dot(self.controls_))
-        self.disp('MLE weights (The): (min {:.4f}, mean {:.4f}, max {:.4f}, [<0] {}/{})'
-                  .format(weights.min(), weights.mean(), weights.max(), np.sum(weights < 0), weights.size))
-        self.__estimate(weights, self.fun_, 'MLE(The)', mode='likelihood')
-
         if optimize:
-            zeta2 = zeta0 if np.isnan(target(zeta1)) else zeta1
             begin = dt.now()
             if NR:
-                res = opt.root(lambda zeta: (gradient(zeta), hessian(zeta)), zeta2, method='lm', jac=True)
+                res = opt.root(lambda zeta: (gradient(zeta), hessian(zeta)), zeta0, method='lm', jac=True)
             else:
                 cons = ({'type': 'ineq', 'fun': lambda zeta: self.proposal_ + zeta.dot(self.controls_),
                          'jac': lambda zeta: self.controls_.T})
-                res = opt.minimize(target, zeta2, method='SLSQP', jac=gradient, constraints=cons,
+                res = opt.minimize(target, zeta0, method='SLSQP', jac=gradient, constraints=cons,
                                    options={'ftol': 1e-8, 'maxiter': 1000})
 
             end = dt.now()
             self.disp('')
             self.disp('Optimization results (spent {} seconds):'.format((end - begin).seconds))
             if res['success']:
-                zeta2 = res['x']
-                self.disp('MLE(Opt) zeta: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f}, norm {:.4f})'
-                          .format(zeta2.min(), zeta2.mean(), zeta2.max(), zeta2.std(), np.sqrt(np.sum(zeta2 ** 2))))
-                self.disp('Dist(zeta(Opt),zeta(The))={:.4f}'.format(np.sqrt(np.sum((zeta2 - zeta1) ** 2))))
-                grad2 = gradient(zeta2)
+                zeta1 = res['x']
+                grad = gradient(zeta1)
                 self.disp('Optimal: value: {:.4f}; grad: (min {:.4f}, mean {:.4f}, max {:.4f}, std {:.4f})'
-                          .format(target(zeta2), grad2.min(), grad2.mean(), grad2.max(), grad2.std()))
-                weights = self.__divi(self.target_, self.proposal_ + zeta2.dot(self.controls_))
-                self.disp('MLE weights (Opt): (min {:.4f}, mean {:.4f}, max {:.4f}, [<0] {}/{})'
+                          .format(target(zeta1), grad.min(), grad.mean(), grad.max(), grad.std()))
+                weights = self.__divi(self.target_, self.proposal_ + zeta1.dot(self.controls_))
+                self.disp('MLE weights: (min {:.4f}, mean {:.4f}, max {:.4f}, [<0] {}/{})'
                           .format(weights.min(), weights.mean(), weights.max(), np.sum(weights < 0), weights.size))
-                self.__estimate(weights, self.fun_, 'MLE(Opt)', mode='likelihood')
+                self.__estimate(weights, self.statistics_, 'MLE', asym=False)
             else:
                 self.disp('MLE fail')
 
@@ -220,9 +198,7 @@ class Quantile:
             ax.plot(grid_x, opt_proposal.max() * mix_proposal / mix_proposal.max())
             ax.legend(['optimal proposal', 'nonparametric proposal', 'mixture proposal'])
         elif name == 'regression':
-            reg_proposal = (self.reg1.coef_ - self.mu * self.reg2.coef_).dot(self.controls(grid_X)) \
-                if self.sn else self.reg.coef_.dot(self.controls(grid_X)) + self.mu * self.mix_proposal(grid_X)
-            ax.plot(grid_x, np.abs(reg_proposal))
+            ax.plot(grid_x, np.abs(self.reg_proposal(grid_X)))
             ax.legend(['optimal proposal', 'regression proposal'])
         else:
             print('name err! ')
@@ -231,9 +207,56 @@ class Quantile:
         plt.show()
 
 
+def experiment(dim, alpha, size_est, show, size_kn, ratio):
+    mean = np.zeros(dim)
+    target = lambda x: st.multivariate_normal(mean=mean).pdf(x)
+    statistic = lambda x: x[:, 0]
+    init_proposal = st.multivariate_normal(mean=mean, cov=4)
+    grid_x = np.linspace(-5, 5, 200)
+    qtl = Quantile(dim, target, statistic, alpha, init_proposal, size_est, show=show)
+    qtl.initial_estimation(size_kn, ratio)
+    if qtl.show:
+        qtl.draw(grid_x, name='initial')
+
+    qtl.density_estimation(bw=1.0, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1)
+    qtl.nonparametric_estimation()
+    if qtl.show:
+        qtl.draw(grid_x, name='nonparametric')
+
+    qtl.regression_estimation()
+    if qtl.show:
+        qtl.draw(grid_x, name='regression')
+
+    qtl.likelihood_estimation(optimize=True, NR=True)
+    return np.array(qtl.result)
+
+
 def main():
-    pass
+    np.random.seed(3033079628)
+    results = []
+    for i in range(10):
+        print(i + 1)
+        result = experiment(dim=4, alpha=0.05, size_est=25000, show=False, size_kn=500, ratio=20)
+        results.append(result[[0, 1, 5, 6, 7, 8, 12, 13, 14, 13]])
+
+    return np.array(results)
 
 
 if __name__ == '__main__':
-    pass
+    truth = st.norm.ppf(0.05)
+    pdf = st.norm.pdf(truth)
+    R = main()
+
+    aVar = R[:, 1::2] / (pdf ** 2)
+    mean_aVar = aVar.mean(axis=0)
+    std_aVar = aVar.std(axis=0)
+    print('a-var(l):', np.round(mean_aVar - 1.96 * std_aVar, 4))
+    print('a-var(m):', np.round(mean_aVar, 4))
+    print('a-var(r):', np.round(mean_aVar + 1.96 * std_aVar, 4))
+
+    MSE = np.mean((R[:, ::2] - truth) ** 2, axis=0)
+    print('nMSE:', np.round(np.append(10000 * MSE[0], 25000 * MSE[1:]), 4))
+
+    aErr = np.sqrt(np.hstack([aVar[:, 0].reshape([-1, 1]) / 10000, aVar[:, 1:] / 25000]))
+    Flag = (truth >= R[:, ::2] - 1.96 * aErr) & (truth <= R[:, ::2] + 1.96 * aErr)
+    print('C.I.:', Flag.mean(axis=0))
