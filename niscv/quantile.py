@@ -234,7 +234,7 @@ def experiment(dim, alpha, size_est, show, size_kn, ratio):
 def main():
     np.random.seed(3033079628)
     results = []
-    for i in range(10):
+    for i in range(100):
         print(i + 1)
         result = experiment(dim=4, alpha=0.05, size_est=25000, show=False, size_kn=500, ratio=20)
         results.append(result[[0, 1, 5, 6, 7, 8, 12, 13, 14, 13]])
