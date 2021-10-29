@@ -258,13 +258,13 @@ class Expectation:
         plt.show()
 
 
-def experiment(dim, size_est, sn, size_kn, ratio):
+def experiment(dim, size_est, sn, show, size_kn, ratio):
     mean = np.zeros(dim)
     target = lambda x: st.multivariate_normal(mean=mean).pdf(x)
     fun = lambda x: x[:, 0] ** 2
     init_proposal = st.multivariate_normal(mean=mean, cov=4)
     grid_x = np.linspace(-5, 5, 200)
-    exp = Expectation(dim, target, fun, init_proposal, size_est, sn=sn, show=False)
+    exp = Expectation(dim, target, fun, init_proposal, size_est, sn=sn, show=show)
     exp.initial_estimation(size_kn, ratio, resample=True)
     if exp.show:
         exp.draw(grid_x, name='initial')
@@ -282,19 +282,22 @@ def experiment(dim, size_est, sn, size_kn, ratio):
     return np.array(exp.result)
 
 
-def main():
+def main(sn):
     np.random.seed(19971107)
     results = []
     for i in range(100):
         print(i + 1)
-        result = experiment(dim=4, size_est=25000, sn=True, size_kn=500, ratio=20)
-        results.append(result[[0, 1, 5, 6, 7, 8, 10, 11, 14, 11]])
+        result = experiment(dim=4, size_est=25000, sn=sn, show=False, size_kn=500, ratio=20)
+        if sn:
+            results.append(result[[0, 1, 5, 6, 7, 8, 11, 12, 15, 12]])
+        else:
+            results.append(result[[0, 1, 5, 6, 7, 8, 10, 11, 14, 11]])
 
     return np.array(results)
 
 
 if __name__ == '__main__':
-    R = main()
+    R = main(sn=True)
 
     aVar = R[:, 1::2]
     mean_aVar = aVar.mean(axis=0)
