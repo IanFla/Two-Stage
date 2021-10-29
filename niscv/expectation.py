@@ -38,7 +38,6 @@ class Expectation:
         self.mix_sampler = None
         self.controls = None
 
-        self.samples_ = None
         self.target_ = None
         self.fun_ = None
         self.proposal_ = None
@@ -145,18 +144,18 @@ class Expectation:
         funs = self.fun(samples)
         self.__estimate(weights, funs, 'NIS')
 
-        self.samples_ = self.mix_sampler(self.size_est)
-        self.target_ = self.target(self.samples_)
-        self.fun_ = self.fun(self.samples_)
-        self.proposal_ = self.mix_proposal(self.samples_)
+        samples_ = self.mix_sampler(self.size_est)
+        self.target_ = self.target(samples_)
+        self.fun_ = self.fun(samples_)
+        self.proposal_ = self.mix_proposal(samples_)
         self.weights_ = self.__divi(self.target_, self.proposal_)
         self.__estimate(self.weights_, self.fun_, 'MIS')
+        self.controls_ = self.controls(samples_)
 
     def regression_estimation(self):
-        self.controls_ = self.controls(self.samples_)
         X = (self.__divi(self.controls_, self.proposal_)).T
         w = self.weights_
-        y = w * self.fun(self.samples_)
+        y = w * self.fun_
 
         if self.sn:
             self.reg1 = lm.LinearRegression().fit(X, y)
