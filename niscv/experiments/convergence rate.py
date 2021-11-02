@@ -39,7 +39,7 @@ def main(order, sn, size_kns):
     for size_kn in size_kns:
         print(size_kn)
         begin = dt.now()
-        result = experiment(dim=3, order=order, size_est=25000, sn=sn, show=False, size_kn=size_kn, ratio=100)
+        result = experiment(dim=7, order=order, size_est=100000, sn=sn, show=False, size_kn=size_kn, ratio=100)
         end = dt.now()
         result = np.append(result, (end - begin).seconds)
         results.append(result)
@@ -48,8 +48,8 @@ def main(order, sn, size_kns):
 
 
 if __name__ == '__main__':
-    X = np.array([100, 200, 300, 400, 500, 600, 700, 800, 900, 1000])
     settings = [[1, False], [1, True], [2, False], [2, True]]
+    X = np.array([50, 100, 200, 400, 800])
     for setting in settings:
         R = main(order=setting[0], sn=setting[1], size_kns=X)
 
@@ -66,4 +66,6 @@ if __name__ == '__main__':
         reg1 = lm.LinearRegression().fit(np.log(X).reshape([-1, 1]), np.log(R[:, 1]))
         reg2 = lm.LinearRegression().fit(np.log(X).reshape([-1, 1]), np.log(R[:, 2]))
         reg3 = lm.LinearRegression().fit(np.log(X).reshape([-1, 1]), np.log(R[:, 3]))
+        reg4 = lm.LinearRegression().fit(np.log(X).reshape([-1, 1]), np.log(R[:, 4] + 1e-10))
         print(setting, reg1.coef_, reg2.coef_, reg3.coef_)
+        print(reg4.coef_)
