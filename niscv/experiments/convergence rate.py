@@ -53,15 +53,15 @@ if __name__ == '__main__':
     for setting in settings:
         R = main(order=setting[0], sn=setting[1], size_kns=X)
 
-        plt.loglog(X, R[:, 0], label='IS')
-        plt.loglog(X, R[:, 1], label='NIS')
-        plt.loglog(X, R[:, 2], label='MIS')
-        plt.loglog(X, R[:, 3], label='RIS')
-        plt.legend()
-        plt.show()
-
-        plt.loglog(X, R[:, 4], label='time')
-        plt.show()
+        # plt.loglog(X, R[:, 0], label='IS')
+        # plt.loglog(X, R[:, 1], label='NIS')
+        # plt.loglog(X, R[:, 2], label='MIS')
+        # plt.loglog(X, R[:, 3], label='RIS')
+        # plt.legend()
+        # plt.show()
+        #
+        # plt.loglog(X, R[:, 4], label='time')
+        # plt.show()
 
         reg1 = lm.LinearRegression().fit(np.log(X).reshape([-1, 1]), np.log(R[:, 1]))
         reg2 = lm.LinearRegression().fit(np.log(X).reshape([-1, 1]), np.log(R[:, 2]))
