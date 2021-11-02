@@ -2,14 +2,12 @@ import numpy as np
 from matplotlib import pyplot as plt
 from wquantiles import quantile
 from particles import resampling as rs
-from kde import KDE
+from niscv.basic.kde import KDE
 import sklearn.linear_model as lm
 from datetime import datetime as dt
 import scipy.optimize as opt
 
 import scipy.stats as st
-# import pickle
-# import multiprocessing
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -69,7 +67,7 @@ class Quantile:
             self.disp('{} est: {:.4f}'.format(name, VaR))
 
     def initial_estimation(self, size_kn, ratio):
-        size_est = ratio * size_kn
+        size_est = np.round(ratio * size_kn).astype(np.int64)
         samples = self.init_sampler(size_est)
         weights = self.__divi(self.target(samples), self.init_proposal(samples))
         statistics = self.statistic(samples)
@@ -81,6 +79,7 @@ class Quantile:
         ESS = 1 / np.sum((weights_kn / weights_kn.sum()) ** 2)
         RSS = weights_kn.sum() / weights_kn.max()
         self.disp('Ratio reference: n0/ESS {:.0f} ~ n0/RSS {:.0f}'.format(size_est / ESS, size_est / RSS))
+        self.result.extend([ESS, RSS])
 
         index, sizes = np.unique(rs.stratified(weights_kn / weights_kn.sum(), M=size_kn), return_counts=True)
         self.centers = samples[index]
@@ -208,6 +207,7 @@ class Quantile:
 
 
 def experiment(dim, alpha, size_est, show, size_kn, ratio):
+    results = []
     mean = np.zeros(dim)
     target = lambda x: st.multivariate_normal(mean=mean).pdf(x)
     statistic = lambda x: x[:, 0]
@@ -215,20 +215,24 @@ def experiment(dim, alpha, size_est, show, size_kn, ratio):
     grid_x = np.linspace(-5, 5, 200)
     qtl = Quantile(dim, target, statistic, alpha, init_proposal, size_est, show=show)
     qtl.initial_estimation(size_kn, ratio)
+    results.extend([qtl.result[-5], qtl.result[-4]])
     if qtl.show:
         qtl.draw(grid_x, name='initial')
 
     qtl.density_estimation(bw=1.0, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1)
     qtl.nonparametric_estimation()
+    results.extend([qtl.result[-4], qtl.result[-3], qtl.result[-2], qtl.result[-1]])
     if qtl.show:
         qtl.draw(grid_x, name='nonparametric')
 
     qtl.regression_estimation()
+    results.extend([qtl.result[-2], qtl.result[-1]])
     if qtl.show:
         qtl.draw(grid_x, name='regression')
 
     qtl.likelihood_estimation(optimize=True, NR=True)
-    return np.array(qtl.result)
+    results.extend([qtl.result[-1], results[-1]])
+    return results
 
 
 def main():
@@ -237,7 +241,7 @@ def main():
     for i in range(100):
         print(i + 1)
         result = experiment(dim=4, alpha=0.05, size_est=25000, show=False, size_kn=500, ratio=20)
-        results.append(result[[0, 1, 5, 6, 7, 8, 12, 13, 14, 13]])
+        results.append(result)
 
     return np.array(results)
 

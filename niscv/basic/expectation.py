@@ -1,14 +1,12 @@
 import numpy as np
 from matplotlib import pyplot as plt
 from particles import resampling as rs
-from kde import KDE
+from niscv.basic.kde import KDE
 import sklearn.linear_model as lm
 from datetime import datetime as dt
 import scipy.optimize as opt
 
 import scipy.stats as st
-# import pickle
-# import multiprocessing
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -90,7 +88,7 @@ class Expectation:
                       .format(name, mu,  mu - 1.96 * aerr, mu + 1.96 * aerr))
 
     def initial_estimation(self, size_kn, ratio, resample=True):
-        size_est = ratio * size_kn
+        size_est = np.round(ratio * size_kn).astype(np.int64)
         samples = self.init_sampler(size_est)
         weights = self.__divi(self.target(samples), self.init_proposal(samples))
         funs = self.fun(samples)
@@ -105,6 +103,7 @@ class Expectation:
             ESS = 1 / np.sum((weights_kn / weights_kn.sum()) ** 2)
             RSS = weights_kn.sum() / weights_kn.max()
             self.disp('Ratio reference: n0/ESS {:.0f} ~ n0/RSS {:.0f}'.format(size_est / ESS, size_est / RSS))
+            self.result.extend([ESS, RSS])
 
             index, sizes = np.unique(rs.stratified(weights_kn / weights_kn.sum(), M=size_kn), return_counts=True)
             self.centers = samples[index]
@@ -258,6 +257,7 @@ class Expectation:
 
 
 def experiment(dim, size_est, sn, show, size_kn, ratio):
+    results = []
     mean = np.zeros(dim)
     target = lambda x: st.multivariate_normal(mean=mean).pdf(x)
     fun = lambda x: x[:, 0] > 0.5
@@ -265,20 +265,24 @@ def experiment(dim, size_est, sn, show, size_kn, ratio):
     grid_x = np.linspace(-5, 5, 200)
     exp = Expectation(dim, target, fun, init_proposal, size_est, sn=sn, show=show)
     exp.initial_estimation(size_kn, ratio, resample=True)
+    results.extend([exp.result[-5], exp.result[-4]])
     if exp.show:
         exp.draw(grid_x, name='initial')
 
     exp.density_estimation(bw=1.0, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1)
     exp.nonparametric_estimation()
+    results.extend([exp.result[-4], exp.result[-3], exp.result[-2], exp.result[-1]])
     if exp.show:
         exp.draw(grid_x, name='nonparametric')
 
     exp.regression_estimation()
+    results.extend([exp.result[-2], exp.result[-1]])
     if exp.show:
         exp.draw(grid_x, name='regression')
 
     exp.likelihood_estimation(optimize=True, NR=True)
-    return np.array(exp.result)
+    results.extend([exp.result[-1], results[-1]])
+    return results
 
 
 def main(sn):
@@ -287,10 +291,7 @@ def main(sn):
     for i in range(100):
         print(i + 1)
         result = experiment(dim=4, size_est=25000, sn=sn, show=False, size_kn=500, ratio=20)
-        if sn:
-            results.append(result[[0, 1, 5, 6, 7, 8, 11, 12, 15, 12]])
-        else:
-            results.append(result[[0, 1, 5, 6, 7, 8, 10, 11, 14, 11]])
+        results.append(result)
 
     return np.array(results)
 
