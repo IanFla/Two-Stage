@@ -39,7 +39,7 @@ def main(order, sn, size_kns):
     for size_kn in size_kns:
         print(size_kn)
         begin = dt.now()
-        result = experiment(dim=7, order=order, size_est=100000, sn=sn, show=False, size_kn=size_kn, ratio=100)
+        result = experiment(dim=5, order=order, size_est=100000, sn=sn, show=False, size_kn=size_kn, ratio=100)
         end = dt.now()
         result = np.append(result, (end - begin).seconds)
         results.append(result)
@@ -49,7 +49,7 @@ def main(order, sn, size_kns):
 
 if __name__ == '__main__':
     settings = [[1, False], [1, True], [2, False], [2, True]]
-    X = np.array([50, 100, 200, 400, 800])
+    X = np.array([50, 100, 150, 200, 300, 400, 500, 700, 900, 1100])
     for setting in settings:
         R = main(order=setting[0], sn=setting[1], size_kns=X)
 
