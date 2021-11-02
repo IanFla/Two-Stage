@@ -30,7 +30,7 @@ def experiment(dim, order, size_est, sn, show, size_kn, ratio):
     if exp.show:
         exp.draw(grid_x, name='regression')
 
-    exp.likelihood_estimation(optimize=True, NR=True)
+    # exp.likelihood_estimation(optimize=True, NR=True)
     return results
 
 
