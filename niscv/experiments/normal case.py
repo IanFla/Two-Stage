@@ -4,6 +4,7 @@ import scipy.stats as st
 from niscv.basic.expectation import Expectation
 # import sklearn.linear_model as lm
 from datetime import datetime as dt
+import pickle
 
 
 def experiment(dim, order, size_est, sn, show, size_kn, ratio):
@@ -66,3 +67,7 @@ if __name__ == '__main__':
         r, r_all = main(rep=100, order=setting[0], sn=setting[1], size_kns=X)
         R.append(R)
         R_all.append(r_all)
+
+    with open('DimSize', 'wb') as file:
+        pickle.dump([R, R_all], file)
+        file.close()
