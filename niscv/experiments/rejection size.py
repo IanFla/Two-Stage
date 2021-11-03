@@ -32,7 +32,7 @@ def experiment(dim, size_est, sn, show, size_kn, ratio):
 
 
 def main(sn, ratios):
-    # np.random.seed(3033079628)
+    # np.random.seed(3033079628) =====
     results = []
     for ratio in ratios:
         print(ratio)
