@@ -1,9 +1,8 @@
 import numpy as np
 import scipy.stats as st
 from niscv.basic.expectation import Expectation
-from datetime import datetime as dt
-import multiprocessing
 import pickle
+import multiprocessing
 
 
 def experiment(dim, order, size_est, sn, show, size_kn, ratio):
@@ -35,34 +34,33 @@ def experiment(dim, order, size_est, sn, show, size_kn, ratio):
     return results,  exp.result
 
 
-def main(order, sn):
-    size_kns = np.array([100, 150, 200, 300, 400, 600, 800])
-    rep = 200
-    results = []
-    results_all = []
-    for size_kn in size_kns:
-        begin = dt.now()
-        result = []
-        result_all = []
-        for i in range(rep):
-            res, res_all = experiment(dim=3, order=order, size_est=100000, sn=sn,
-                                      show=False, size_kn=size_kn, ratio=100)
-            result.append(res)
-            result_all.append(res_all)
+def main(it):
+    np.random.seed(1997 * it + 1107)
+    print(it)
+    settings = [[0, False]]
+    Results = []
+    Results_all = []
+    for setting in settings:
+        size_kns = np.array([30, 40])
+        results = []
+        results_all = []
+        for size_kn in size_kns:
+            result, result_all = experiment(dim=3, order=setting[0], size_est=100000, sn=setting[1],
+                                            show=False, size_kn=size_kn, ratio=100)
+            results.append(result)
+            results_all.append(result_all)
 
-        end = dt.now()
-        print((end - begin).seconds)
-        results.append(result)
-        results_all.append(result_all)
+        Results.append(results)
+        Results_all.append(results_all)
 
-    return np.array(results), results_all
+    return [Results, Results_all]
 
 
 if __name__ == '__main__':
-    np.random.seed(19971107)
-    settings = [[0, False], [1, False], [1, True], [2, False], [2, True]]
-    pool = multiprocessing.Pool(5)
-    R = pool.map(main, settings)
+    pool = multiprocessing.Pool(2)
+    its = np.arange(2)
+    R = pool.map(main, its)
+    print(R)
 
     with open('normal_3D', 'wb') as file:
         pickle.dump(R, file)
