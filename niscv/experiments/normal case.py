@@ -57,7 +57,7 @@ def main(it):
 
 
 if __name__ == '__main__':
-    pool = multiprocessing.Pool(20)
+    pool = multiprocessing.Pool(10)
     its = np.arange(200)
     R = pool.map(main, its)
 
