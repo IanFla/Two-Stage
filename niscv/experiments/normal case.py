@@ -1,8 +1,6 @@
 import numpy as np
-# from matplotlib import pyplot as plt
 import scipy.stats as st
 from niscv.basic.expectation import Expectation
-# import sklearn.linear_model as lm
 from datetime import datetime as dt
 import pickle
 

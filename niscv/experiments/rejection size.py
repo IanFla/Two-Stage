@@ -1,5 +1,4 @@
 import numpy as np
-# from matplotlib import pyplot as plt
 import scipy.stats as st
 from niscv.basic.expectation import Expectation
 
