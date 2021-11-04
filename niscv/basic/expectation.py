@@ -157,12 +157,12 @@ class Expectation:
         y = w * self.fun_
 
         if self.sn:
-            self.reg1 = lm.LinearRegression(n_jobs=4).fit(X, y)
-            self.reg2 = lm.LinearRegression(n_jobs=4).fit(X, w)
+            self.reg1 = lm.LinearRegression().fit(X, y)
+            self.reg2 = lm.LinearRegression().fit(X, w)
             self.disp('Regression R2: {:.4f} / {:.4f}'.format(self.reg1.score(X, y), self.reg2.score(X, w)))
             self.result.extend([self.reg1.score(X, y), self.reg2.score(X, w)])
         else:
-            self.reg = lm.LinearRegression(n_jobs=4).fit(X, y)
+            self.reg = lm.LinearRegression().fit(X, y)
             self.disp('Regression R2: {:.4f}'.format(self.reg.score(X, y)))
             self.result.append(self.reg.score(X, y))
 
