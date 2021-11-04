@@ -58,7 +58,7 @@ def main(it, dim):
 
 
 def run(dim):
-    pool = multiprocessing.Pool(1)
+    pool = multiprocessing.Pool(5)
     begin = dt.now()
     its = np.arange(200)
     R = pool.map(partial(main, dim=dim), its)
