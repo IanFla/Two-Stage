@@ -3,6 +3,7 @@ import scipy.stats as st
 from niscv.basic.expectation import Expectation
 import multiprocessing
 import pickle
+from datetime import datetime as dt
 
 
 def experiment(dim, order, size_est, sn, show, size_kn, ratio):
@@ -29,8 +30,6 @@ def experiment(dim, order, size_est, sn, show, size_kn, ratio):
     if exp.show:
         exp.draw(grid_x, name='regression')
 
-    exp.likelihood_estimation(optimize=True, NR=True)
-    results.extend([exp.result[-1], results[-1]])
     return results,  exp.result
 
 
@@ -41,11 +40,13 @@ def main(it):
     Results = []
     Results_all = []
     for setting in settings:
-        size_kns = [50, 100, 150, 200, 300, 400, 500, 700, 900, 1100]
+        size_kns = [50, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1500]
         results = []
         results_all = []
+        print(setting)
         for size_kn in size_kns:
-            result, result_all = experiment(dim=3, order=setting[0], size_est=10000, sn=setting[1],
+            print(size_kn)
+            result, result_all = experiment(dim=3, order=setting[0], size_est=20000, sn=setting[1],
                                             show=False, size_kn=size_kn, ratio=100)
             results.append(result)
             results_all.append(result_all)
@@ -58,8 +59,11 @@ def main(it):
 
 if __name__ == '__main__':
     pool = multiprocessing.Pool(10)
+    begin = dt.now()
     its = np.arange(200)
     R = pool.map(main, its)
+    end = dt.now()
+    print((end - begin).seconds)
 
     with open('normal_3D', 'wb') as file:
         pickle.dump(R, file)
