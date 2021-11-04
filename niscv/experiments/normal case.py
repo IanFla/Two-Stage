@@ -38,8 +38,7 @@ def run(it, dim):
     np.random.seed(1997 * it + 1107)
     print(it)
     settings = [[0, False], [1, False], [1, True], [2, False], [2, True]]
-    # size_kns = [50, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1500]
-    size_kns = [100, 200, 400, 600, 1000, 1500]
+    size_kns = [50, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1500]
 
     Results = []
     Results_all = []
@@ -59,17 +58,15 @@ def run(it, dim):
 
 
 def main(dim):
-    pool = multiprocessing.Pool(5)
-    begin = dt.now()
-    # its = np.arange(200)
-    its = np.arange(10)
-    R = pool.map(partial(run, dim=dim), its)
-    end = dt.now()
-    print((end - begin).seconds)
+    with multiprocessing.Pool(processes=5) as pool:
+        begin = dt.now()
+        its = np.arange(200)
+        R = pool.map(partial(run, dim=dim), its)
+        end = dt.now()
+        print((end - begin).seconds)
 
     with open('normal_' + str(dim) + 'D', 'wb') as file:
         pickle.dump(R, file)
-        file.close()
 
 
 if __name__ == '__main__':
