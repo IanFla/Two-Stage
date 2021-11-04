@@ -34,7 +34,7 @@ def experiment(dim, order, size_est, sn, show, size_kn, ratio):
     return results,  exp.result
 
 
-def main(it, dim):
+def run(it, dim):
     np.random.seed(1997 * it + 1107)
     print(it)
     settings = [[0, False], [1, False], [1, True], [2, False], [2, True]]
@@ -57,11 +57,11 @@ def main(it, dim):
     return [Results, Results_all]
 
 
-def run(dim):
+def main(dim):
     pool = multiprocessing.Pool(5)
     begin = dt.now()
     its = np.arange(200)
-    R = pool.map(partial(main, dim=dim), its)
+    R = pool.map(partial(run, dim=dim), its)
     end = dt.now()
     print((end - begin).seconds)
 
@@ -71,6 +71,6 @@ def run(dim):
 
 
 if __name__ == '__main__':
-    run(3)
-    run(5)
-    run(7)
+    main(3)
+    main(5)
+    main(7)
