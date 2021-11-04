@@ -41,11 +41,11 @@ def main(it):
     Results = []
     Results_all = []
     for setting in settings:
-        size_kns = [100, 150, 200, 300, 400, 600, 800]
+        size_kns = [50, 100, 150, 200, 300, 400, 500, 700, 900, 1100]
         results = []
         results_all = []
         for size_kn in size_kns:
-            result, result_all = experiment(dim=3, order=setting[0], size_est=100000, sn=setting[1],
+            result, result_all = experiment(dim=3, order=setting[0], size_est=10000, sn=setting[1],
                                             show=False, size_kn=size_kn, ratio=100)
             results.append(result)
             results_all.append(result_all)
