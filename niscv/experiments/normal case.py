@@ -2,10 +2,10 @@ import numpy as np
 import scipy.stats as st
 from niscv.basic.expectation import Expectation
 import multiprocessing
+import os
 from functools import partial
 from datetime import datetime as dt
 import pickle
-import os
 
 
 def experiment(dim, order, size_est, sn, show, size_kn, ratio):
@@ -59,8 +59,8 @@ def run(it, dim):
 
 
 def main(dim):
-    os.environ["OMP_NUM_THREADS"] = '3'
-    with multiprocessing.Pool(processes=2) as pool:
+    os.environ['OMP_NUM_THREADS'] = '3'
+    with multiprocessing.Pool(processes=10) as pool:
         begin = dt.now()
         its = np.arange(200)
         R = pool.map(partial(run, dim=dim), its)
