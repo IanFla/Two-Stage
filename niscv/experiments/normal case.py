@@ -2,8 +2,9 @@ import numpy as np
 import scipy.stats as st
 from niscv.basic.expectation import Expectation
 import multiprocessing
-import pickle
+from functools import partial
 from datetime import datetime as dt
+import pickle
 
 
 def experiment(dim, order, size_est, sn, show, size_kn, ratio):
@@ -33,7 +34,7 @@ def experiment(dim, order, size_est, sn, show, size_kn, ratio):
     return results,  exp.result
 
 
-def main(it):
+def main(it, dim):
     np.random.seed(1997 * it + 1107)
     print(it)
     settings = [[0, False], [1, False], [1, True], [2, False], [2, True]]
@@ -45,7 +46,7 @@ def main(it):
         results = []
         results_all = []
         for size_kn in size_kns:
-            result, result_all = experiment(dim=3, order=setting[0], size_est=20000, sn=setting[1],
+            result, result_all = experiment(dim=dim, order=setting[0], size_est=20000, sn=setting[1],
                                             show=False, size_kn=size_kn, ratio=100)
             results.append(result)
             results_all.append(result_all)
@@ -56,14 +57,20 @@ def main(it):
     return [Results, Results_all]
 
 
-if __name__ == '__main__':
-    pool = multiprocessing.Pool(10)
+def run(dim):
+    pool = multiprocessing.Pool(1)
     begin = dt.now()
     its = np.arange(200)
-    R = pool.map(main, its)
+    R = pool.map(partial(main, dim=dim), its)
     end = dt.now()
     print((end - begin).seconds)
 
-    with open('normal_3D', 'wb') as file:
+    with open('normal_' + str(dim) + 'D', 'wb') as file:
         pickle.dump(R, file)
         file.close()
+
+
+if __name__ == '__main__':
+    run(3)
+    run(5)
+    run(7)
