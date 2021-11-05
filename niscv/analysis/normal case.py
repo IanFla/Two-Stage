@@ -1,10 +1,6 @@
 import numpy as np
 from matplotlib import pyplot as plt
-
-
-class ABC:
-    def __init__(self):
-        pass
+import pickle
 
 
 def main():
