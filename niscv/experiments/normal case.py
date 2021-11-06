@@ -37,7 +37,7 @@ def experiment(dim, order, size_est, sn, show, size_kn, ratio):
 
 def run(it, dim):
     np.random.seed(1997 * it + 1107)
-    print(it)
+    print(it, end=' ')
     settings = [[0, False], [1, False], [1, True], [2, False], [2, True], [3, False], [3, True], [4, False], [4, True]]
     size_kns = [50, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1500]
 
@@ -48,7 +48,7 @@ def run(it, dim):
         results_all = []
         for size_kn in size_kns:
             result, result_all = experiment(dim=dim, order=setting[0], size_est=10000, sn=setting[1],
-                                            show=False, size_kn=size_kn, ratio=100)
+                                            show=False, size_kn=size_kn, ratio=500)
             results.append(result)
             results_all.append(result_all)
 
@@ -62,12 +62,12 @@ def main(dim):
     os.environ['OMP_NUM_THREADS'] = '2'
     with multiprocessing.Pool(processes=16) as pool:
         begin = dt.now()
-        its = np.arange(200)
+        its = np.arange(1000)
         R = pool.map(partial(run, dim=dim), its)
         end = dt.now()
         print((end - begin).seconds)
 
-    with open('normal2_' + str(dim) + 'D', 'wb') as file:
+    with open('normal3_' + str(dim) + 'D', 'wb') as file:
         pickle.dump(R, file)
 
 
@@ -75,3 +75,4 @@ if __name__ == '__main__':
     main(3)
     main(5)
     main(7)
+    main(9)
