@@ -4,17 +4,63 @@ import pickle
 
 
 def read(dim):
-    file = open('niscv/data/normal_' + str(dim) + 'D', 'rb')
-    data = np.array(pickle.load(file))
-    data = data[0]
-    print(type(data))
-    data = np.array(data)
-    print(data.shape)
+    file = open('/Users/ianfla/Documents/GitHub/Two-Stage/niscv/data/normal_' + str(dim) + 'D', 'rb')
+    data = pickle.load(file)
+    data = np.array([da[0] for da in data])
+    return data
 
 
-def main():
-    read(3)
+def plot(data, ax, label, c, mode='a-var', truth=None, n=''):
+    size_kns = np.array([50, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1500])
+    if mode == 'nmse':
+        n = 100 * size_kns if n == 'IS' else 20000
+        nMSE = n * np.mean((data - truth) ** 2, axis=0)
+        ax.loglog(size_kns, nMSE, c, label=label)
+    elif mode == 'nvar':
+        n = 100 * size_kns if n == 'IS' else 20000
+        nvar = n * np.var(data, axis=0)
+        ax.loglog(size_kns, nvar, c + '.', label=label)
+    elif mode == 'a-var':
+        avar_mean = data.mean(axis=0)
+        ax.loglog(size_kns, avar_mean, c + '--', label=label)
+    else:
+        print('mode error! ')
+
+
+def draw(dim, order, sn, ax):
+    data = read(dim)
+    index = 0 if order == 0 else 2 * order - 1 + sn
+    name = str(dim) + 'D, M' + str(order) + ', SN(' + str(sn) + ')'
+    truth = (order + 1) % 2
+
+    plot(data[:, index, :, 0], ax, label='IS nMSE', c='b', mode='nmse', truth=truth, n='IS')
+    plot(data[:, index, :, 0], ax, label='IS nVAR', c='b', mode='nvar', truth=truth, n='IS')
+    plot(data[:, index, :, 1], ax, label='IS mean(a-var)', c='b', mode='a-var', truth=None)
+    plot(data[:, index, :, 2], ax, label='NIS nMSE', c='y', mode='nmse', truth=truth)
+    plot(data[:, index, :, 2], ax, label='NIS nVAR', c='y', mode='nvar', truth=truth)
+    plot(data[:, index, :, 3], ax, label='NIS mean(a-var)', c='y', mode='a-var', truth=None)
+    plot(data[:, index, :, 4], ax, label='MIS nMSE', c='c', mode='nmse', truth=truth)
+    plot(data[:, index, :, 4], ax, label='MIS nVAR', c='c', mode='nvar', truth=truth)
+    plot(data[:, index, :, 5], ax, label='MIS mean(a-var)', c='c', mode='a-var', truth=None)
+    plot(data[:, index, :, 6], ax, label='RIS nMSE', c='r', mode='nmse', truth=truth)
+    plot(data[:, index, :, 6], ax, label='RIS nVAR', c='r', mode='nvar', truth=truth)
+    plot(data[:, index, :, 7], ax, label='RIS mean(a-var)', c='r', mode='a-var', truth=None)
+    ax.set_xlabel('log(kernel number)')
+    ax.legend()
+    ax.set_title(name)
+
+
+def main(dim, ax):
+    settings = [[0, False], [1, False], [1, True], [2, False], [2, True]]
+    for j, setting in enumerate(settings):
+        draw(dim, order=setting[0], sn=setting[1], ax=ax[j])
 
 
 if __name__ == '__main__':
-    main()
+    plt.style.use('ggplot')
+    dims = [3, 5, 7]
+    fig, axs = plt.subplots(5, 3, figsize=[30, 30])
+    for i, d in enumerate(dims):
+        main(d, axs[:, i])
+
+    fig.show()

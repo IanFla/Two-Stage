@@ -47,7 +47,7 @@ def run(it, dim):
         results = []
         results_all = []
         for size_kn in size_kns:
-            result, result_all = experiment(dim=dim, order=setting[0], size_est=20000, sn=setting[1],
+            result, result_all = experiment(dim=dim, order=setting[0], size_est=10000, sn=setting[1],
                                             show=False, size_kn=size_kn, ratio=100)
             results.append(result)
             results_all.append(result_all)
@@ -59,8 +59,8 @@ def run(it, dim):
 
 
 def main(dim):
-    os.environ['OMP_NUM_THREADS'] = '3'
-    with multiprocessing.Pool(processes=10) as pool:
+    os.environ['OMP_NUM_THREADS'] = '2'
+    with multiprocessing.Pool(processes=16) as pool:
         begin = dt.now()
         its = np.arange(200)
         R = pool.map(partial(run, dim=dim), its)
