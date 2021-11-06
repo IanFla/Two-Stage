@@ -38,7 +38,7 @@ def experiment(dim, order, size_est, sn, show, size_kn, ratio):
 def run(it, dim):
     np.random.seed(1997 * it + 1107)
     print(it)
-    settings = [[0, False], [1, False], [1, True], [2, False], [2, True]]
+    settings = [[0, False], [1, False], [1, True], [2, False], [2, True], [3, False], [3, True], [4, False], [4, True]]
     size_kns = [50, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1500]
 
     Results = []
@@ -67,7 +67,7 @@ def main(dim):
         end = dt.now()
         print((end - begin).seconds)
 
-    with open('normal_' + str(dim) + 'D', 'wb') as file:
+    with open('normal2_' + str(dim) + 'D', 'wb') as file:
         pickle.dump(R, file)
 
 
