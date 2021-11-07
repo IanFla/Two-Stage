@@ -13,7 +13,7 @@ def experiment(dim, order, size_est, sn, show, size_kn, ratio):
     mean = np.zeros(dim)
     target = lambda x: st.multivariate_normal(mean=mean).pdf(x)
     fun = lambda x: x[:, 0] ** order + 1
-    init_proposal = st.multivariate_normal(mean=mean, cov=4)
+    init_proposal = st.multivariate_normal(mean=mean + 0.5, cov=4)
     grid_x = np.linspace(-5, 5, 200)
     exp = Expectation(dim, target, fun, init_proposal, size_est, sn=sn, show=show)
     exp.initial_estimation(size_kn, ratio, resample=True)
