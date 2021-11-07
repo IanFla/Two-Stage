@@ -12,7 +12,7 @@ def experiment(dim, order, size_est, sn, show, size_kn, ratio):
     results = []
     mean = np.zeros(dim)
     target = lambda x: st.multivariate_normal(mean=mean).pdf(x)
-    fun = lambda x: x[:, 0] ** order
+    fun = lambda x: x[:, 0] ** order + 1
     init_proposal = st.multivariate_normal(mean=mean, cov=4)
     grid_x = np.linspace(-5, 5, 200)
     exp = Expectation(dim, target, fun, init_proposal, size_est, sn=sn, show=show)
@@ -62,17 +62,15 @@ def main(dim):
     os.environ['OMP_NUM_THREADS'] = '2'
     with multiprocessing.Pool(processes=16) as pool:
         begin = dt.now()
-        its = np.arange(1000)
+        its = np.arange(200)
         R = pool.map(partial(run, dim=dim), its)
         end = dt.now()
         print((end - begin).seconds)
 
-    with open('normal3_' + str(dim) + 'D', 'wb') as file:
+    with open('normal4_' + str(dim) + 'D', 'wb') as file:
         pickle.dump(R, file)
 
 
 if __name__ == '__main__':
     main(3)
-    main(5)
     main(7)
-    main(9)

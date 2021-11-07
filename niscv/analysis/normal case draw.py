@@ -5,7 +5,7 @@ import scipy.stats as st
 
 
 def read(dim):
-    file = open('/Users/ianfla/Documents/GitHub/Two-Stage/niscv/data/normal2_' + str(dim) + 'D', 'rb')
+    file = open('/Users/ianfla/Documents/GitHub/Two-Stage/niscv/data/normal3_' + str(dim) + 'D', 'rb')
     data = pickle.load(file)
     data = np.array([da[0] for da in data])
     return data
@@ -14,11 +14,11 @@ def read(dim):
 def plot(data, ax, label, c, mode='a-var', truth=None, n=''):
     size_kns = np.array([50, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1500])
     if mode == 'nmse':
-        n = 100 * size_kns if n == 'IS' else 10000
+        n = 500 * size_kns if n == 'IS' else 10000
         nMSE = n * np.mean((data - truth) ** 2, axis=0)
         ax.loglog(size_kns, nMSE, c, label=label)
     elif mode == 'nvar':
-        n = 100 * size_kns if n == 'IS' else 10000
+        n = 500 * size_kns if n == 'IS' else 10000
         nvar = n * np.var(data, axis=0)
         ax.loglog(size_kns, nvar, c + '.', label=label)
     elif mode == 'a-var':
@@ -59,8 +59,8 @@ def main(dim, ax):
 
 if __name__ == '__main__':
     plt.style.use('ggplot')
-    dims = [3, 5, 7]
-    fig, axs = plt.subplots(9, 3, figsize=[30, 40])
+    dims = [3, 5, 7, 9]
+    fig, axs = plt.subplots(9, 4, figsize=[40, 50])
     for i, d in enumerate(dims):
         main(d, axs[:, i])
 
