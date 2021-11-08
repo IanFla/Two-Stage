@@ -34,14 +34,15 @@ def experiment(dim, order, size_est, sn, show, size_kn, ratio):
 
     exp.likelihood_estimation()
     results.append(exp.result[-1])
-
     return results,  exp.result
 
 
 def run(it, dim):
     np.random.seed(1997 * it + 1107)
     print(it, end=' ')
-    settings = [[0, False], [1, False], [1, True], [2, False], [2, True], [3, False], [3, True], [4, False], [4, True]]
+    # settings = [[0, False], [1, False], [1, True], [2, False], [2, True],
+    # [3, False], [3, True], [4, False], [4, True]]
+    settings = [[0, False], [1, False], [1, True], [2, False], [2, True]]
     # size_kns = [50, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1500]
     size_kns = [50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600]
 
@@ -52,7 +53,7 @@ def run(it, dim):
         results_all = []
         for size_kn in size_kns:
             result, result_all = experiment(dim=dim, order=setting[0], size_est=5000, sn=setting[1],
-                                            show=False, size_kn=size_kn, ratio=500)
+                                            show=False, size_kn=size_kn, ratio=1000)
             results.append(result)
             results_all.append(result_all)
 
@@ -66,16 +67,17 @@ def main(dim):
     os.environ['OMP_NUM_THREADS'] = '2'
     with multiprocessing.Pool(processes=16) as pool:
         begin = dt.now()
-        its = np.arange(200)
+        its = np.arange(1000)
         R = pool.map(partial(run, dim=dim), its)
         end = dt.now()
         print((end - begin).seconds)
 
-    with open('normal5_' + str(dim) + 'D', 'wb') as file:
+    with open('normal6_' + str(dim) + 'D', 'wb') as file:
         pickle.dump(R, file)
 
 
 if __name__ == '__main__':
-    main(5)
-    main(7)
-    main(9)
+    main(4)
+    main(6)
+    main(8)
+    main(10)

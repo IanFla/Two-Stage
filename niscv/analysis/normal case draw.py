@@ -5,20 +5,20 @@ import scipy.stats as st
 
 
 def read(dim):
-    file = open('/Users/ianfla/Documents/GitHub/Two-Stage/niscv/data/normal4_' + str(dim) + 'D', 'rb')
+    file = open('/Users/ianfla/Documents/GitHub/Two-Stage/niscv/data/normal5_' + str(dim) + 'D', 'rb')
     data = pickle.load(file)
     data = np.array([da[0] for da in data])
     return data
 
 
 def plot(data, ax, label, c, mode='a-var', truth=None, n=''):
-    size_kns = np.array([50, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1500])
+    size_kns = np.array([50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600])
     if mode == 'nmse':
-        n = 500 * size_kns if n == 'IS' else 10000
+        n = 500 * size_kns if n == 'IS' else 5000
         nMSE = n * np.mean((data - truth) ** 2, axis=0)
         ax.loglog(size_kns, nMSE, c, label=label)
     elif mode == 'nvar':
-        n = 500 * size_kns if n == 'IS' else 10000
+        n = 500 * size_kns if n == 'IS' else 5000
         nvar = n * np.var(data, axis=0)
         ax.loglog(size_kns, nvar, c + '.', label=label)
     elif mode == 'a-var':
@@ -46,6 +46,8 @@ def draw(dim, order, sn, ax):
     plot(data[:, index, :, 6], ax, label='RIS nMSE', c='r', mode='nmse', truth=truth)
     plot(data[:, index, :, 6], ax, label='RIS nVAR', c='r', mode='nvar', truth=truth)
     plot(data[:, index, :, 7], ax, label='RIS mean(a-var)', c='r', mode='a-var', truth=None)
+    plot(data[:, index, :, 8], ax, label='MLE nMSE', c='k', mode='nmse', truth=truth)
+    plot(data[:, index, :, 8], ax, label='MLE nVAR', c='k', mode='nvar', truth=truth)
     # ax.set_xlabel('log(kernel number)')
     ax.legend()
     ax.set_title(name)
@@ -59,8 +61,8 @@ def main(dim, ax):
 
 if __name__ == '__main__':
     plt.style.use('ggplot')
-    dims = [3, 5, 7, 9]
-    fig, axs = plt.subplots(9, 4, figsize=[40, 50])
+    dims = [5, 7, 9]
+    fig, axs = plt.subplots(9, 3, figsize=[30, 50])
     for i, d in enumerate(dims):
         main(d, axs[:, i])
 
