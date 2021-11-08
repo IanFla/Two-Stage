@@ -32,6 +32,9 @@ def experiment(dim, order, size_est, sn, show, size_kn, ratio):
     if exp.show:
         exp.draw(grid_x, name='regression')
 
+    exp.likelihood_estimation()
+    results.append(exp.result[-1])
+
     return results,  exp.result
 
 
@@ -39,7 +42,8 @@ def run(it, dim):
     np.random.seed(1997 * it + 1107)
     print(it, end=' ')
     settings = [[0, False], [1, False], [1, True], [2, False], [2, True], [3, False], [3, True], [4, False], [4, True]]
-    size_kns = [50, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1500]
+    # size_kns = [50, 100, 150, 200, 300, 400, 500, 600, 800, 1000, 1200, 1500]
+    size_kns = [50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600]
 
     Results = []
     Results_all = []
@@ -47,7 +51,7 @@ def run(it, dim):
         results = []
         results_all = []
         for size_kn in size_kns:
-            result, result_all = experiment(dim=dim, order=setting[0], size_est=10000, sn=setting[1],
+            result, result_all = experiment(dim=dim, order=setting[0], size_est=5000, sn=setting[1],
                                             show=False, size_kn=size_kn, ratio=500)
             results.append(result)
             results_all.append(result_all)
@@ -67,7 +71,7 @@ def main(dim):
         end = dt.now()
         print((end - begin).seconds)
 
-    with open('normal4_' + str(dim) + 'D', 'wb') as file:
+    with open('normal5_' + str(dim) + 'D', 'wb') as file:
         pickle.dump(R, file)
 
 
