@@ -5,7 +5,7 @@ import scipy.stats as st
 
 
 def read(dim):
-    file = open('/Users/ianfla/Documents/GitHub/Two-Stage/niscv/data/normal3_' + str(dim) + 'D', 'rb')
+    file = open('/Users/ianfla/Documents/GitHub/Two-Stage/niscv/data/normal4_' + str(dim) + 'D', 'rb')
     data = pickle.load(file)
     data = np.array([da[0] for da in data])
     return data
@@ -32,7 +32,7 @@ def draw(dim, order, sn, ax):
     data = read(dim)
     index = 0 if order == 0 else 2 * order - 1 + sn
     name = str(dim) + 'D, M' + str(order) + ', SN(' + str(sn) + ')'
-    truth = st.norm.moment(order)
+    truth = st.norm.moment(order) + 1
 
     plot(data[:, index, :, 0], ax, label='IS nMSE', c='b', mode='nmse', truth=truth, n='IS')
     plot(data[:, index, :, 0], ax, label='IS nVAR', c='b', mode='nvar', truth=truth, n='IS')
