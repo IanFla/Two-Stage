@@ -77,4 +77,5 @@ if __name__ == '__main__':
     for i, d in enumerate(dims):
         R.append(main(d, axs[:, i]))
 
+    fig.tight_layout()
     fig.show()

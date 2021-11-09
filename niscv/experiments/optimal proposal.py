@@ -48,6 +48,7 @@ def main():
         ax.legend()
         name = '4D, M' + str(setting[0]) + ', SN(' + str(setting[1]) + ')'
         ax.set_title(name)
+        fig.tight_layout()
         fig.show()
 
 
