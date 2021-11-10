@@ -18,7 +18,7 @@ def plot(data, ax, label, c, mode='a-var', truth=None, n=''):
         n = 1000 * size_kns if n == 'IS' else 5000
         nMSE = n * np.mean((data - truth) ** 2, axis=0)
         ax.loglog(size_kns, nMSE, c, label=label)
-        fit = lm.LinearRegression().fit(np.log(size_kns.reshape([-1, 1])), np.log(nMSE))
+        fit = lm.LinearRegression().fit(np.log(size_kns.reshape([-1, 1])), np.log(nMSE), sample_weight=size_kns)
         return fit.coef_[0]
     elif mode == 'nvar':
         n = 1000 * size_kns if n == 'IS' else 5000
@@ -82,7 +82,7 @@ if __name__ == '__main__':
 
     # 1.Tail protection test(normal) #
     # 6.Stratification effect(normal) #
-    # 2.Regression performance(normal)
-    # 5.MLE performance(normal)
-    # 7.MLE = Reg
-    # 3.Regression bias(normal)
+    # 2.Regression performance(normal) #
+    # 5.MLE performance(normal) #
+    # 7.MLE = Reg #
+    # 3.Regression bias(normal) #

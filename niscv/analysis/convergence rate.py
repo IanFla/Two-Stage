@@ -3,11 +3,10 @@ from matplotlib import pyplot as plt
 import pickle
 import scipy.stats as st
 import sklearn.linear_model as lm
-np.warnings.filterwarnings('ignore', category=np.VisibleDeprecationWarning)
 
 
 def read(dim):
-    file = open('/Users/ianfla/Documents/GitHub/Two-Stage/niscv/data/normal/convergence_' + str(dim) + 'D', 'rb')
+    file = open('/Users/ianfla/Documents/GitHub/Two-Stage/niscv/data/normal/convergence2_' + str(dim) + 'D', 'rb')
     data = pickle.load(file)
     data = [da[0] for da in data]
     return np.array(data)
