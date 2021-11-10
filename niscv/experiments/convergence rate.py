@@ -32,8 +32,6 @@ def experiment(dim, order, size_est, sn, show, size_kn, ratio):
     if exp.show:
         exp.draw(grid_x, name='regression')
 
-    exp.likelihood_estimation()
-    results.append(exp.result[-1])
     return results,  exp.result
 
 
@@ -41,7 +39,8 @@ def run(it, dim):
     np.random.seed(1997 * it + 1107)
     print(it, end=' ')
     settings = [[0, False], [1, False], [1, True], [2, False], [2, True]]
-    size_kns = [50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700]
+    # size_kns = [50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700]
+    size_kns = [100, 200, 300, 400, 600, 800, 1000, 1500, 2000, 2500, 3000]
 
     Results = []
     Results_all = []
@@ -49,7 +48,7 @@ def run(it, dim):
         results = []
         results_all = []
         for size_kn in size_kns:
-            result, result_all = experiment(dim=dim, order=setting[0], size_est=5 * size_kn, sn=setting[1],
+            result, result_all = experiment(dim=dim, order=setting[0], size_est=10 * size_kn, sn=setting[1],
                                             show=False, size_kn=size_kn, ratio=1000)
             results.append(result)
             results_all.append(result_all)
@@ -74,6 +73,7 @@ def main(dim):
 
 
 if __name__ == '__main__':
+    main(2)
     main(4)
     main(6)
     main(8)
