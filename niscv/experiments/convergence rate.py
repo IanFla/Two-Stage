@@ -17,7 +17,7 @@ def experiment(dim, order, size_est, sn, show, size_kn, ratio):
     grid_x = np.linspace(-5, 5, 200)
     exp = Expectation(dim, target, fun, init_proposal, size_est, sn=sn, show=show)
     exp.initial_estimation(size_kn, ratio, resample=True)
-    results.append([exp.result[-5]])
+    results.append(exp.result[-5])
     if exp.show:
         exp.draw(grid_x, name='initial')
 
@@ -49,7 +49,7 @@ def run(it, dim):
         results = []
         results_all = []
         for size_kn in size_kns:
-            result, result_all = experiment(dim=dim, order=setting[0], size_est=100 * size_kn, sn=setting[1],
+            result, result_all = experiment(dim=dim, order=setting[0], size_est=10 * size_kn, sn=setting[1],
                                             show=False, size_kn=size_kn, ratio=1000)
             results.append(result)
             results_all.append(result_all)
