@@ -13,7 +13,7 @@ def experiment(dim, order, size_est, sn, show, size_kn, ratio):
     mean = np.zeros(dim)
     target = lambda x: st.multivariate_normal(mean=mean).pdf(x)
     fun = lambda x: x[:, 0] ** order + 1
-    init_proposal = st.multivariate_normal(mean=mean + 0.5, cov=4)
+    init_proposal = st.multivariate_normal(mean=mean, cov=np.append(4, np.ones(dim - 1)))
     grid_x = np.linspace(-5, 5, 200)
     exp = Expectation(dim, target, fun, init_proposal, size_est, sn=sn, show=show)
     exp.initial_estimation(size_kn, ratio, resample=True)
@@ -40,7 +40,7 @@ def run(it, dim):
     print(it, end=' ')
     settings = [[0, False], [1, False], [1, True], [2, False], [2, True]]
     # size_kns = [50, 100, 150, 200, 250, 300, 350, 400, 450, 500, 550, 600, 650, 700]
-    size_kns = [100, 200, 400, 800, 1000, 1600, 2500, 3200, 4000, 5000, 6400]
+    size_kns = [100, 200, 400, 800, 1200, 1600, 2000, 2500, 3000, 3500, 4000, 5000]
 
     Results = []
     Results_all = []
@@ -48,7 +48,7 @@ def run(it, dim):
         results = []
         results_all = []
         for size_kn in size_kns:
-            result, result_all = experiment(dim=dim, order=setting[0], size_est=5 * size_kn, sn=setting[1],
+            result, result_all = experiment(dim=dim, order=setting[0], size_est=10 * size_kn, sn=setting[1],
                                             show=False, size_kn=size_kn, ratio=1000)
             results.append(result)
             results_all.append(result_all)
@@ -68,7 +68,7 @@ def main(dim):
         end = dt.now()
         print((end - begin).seconds)
 
-    with open('convergence4_' + str(dim) + 'D', 'wb') as file:
+    with open('convergence5_' + str(dim) + 'D', 'wb') as file:
         pickle.dump(R, file)
 
 
