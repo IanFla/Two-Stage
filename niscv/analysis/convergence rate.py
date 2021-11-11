@@ -6,14 +6,14 @@ import sklearn.linear_model as lm
 
 
 def read(dim):
-    file = open('/Users/ianfla/Documents/GitHub/Two-Stage/niscv/data/normal/convergence4_' + str(dim) + 'D', 'rb')
+    file = open('/Users/ianfla/Documents/GitHub/Two-Stage/niscv/data/normal/convergence5_' + str(dim) + 'D', 'rb')
     data = pickle.load(file)
     data = [da[0] for da in data]
     return np.array(data)
 
 
 def plot(data, ax, label, c, mode, truth):
-    size_kns = np.array([100, 200, 400, 800, 1000, 1600, 2500, 3200, 4000, 5000, 6400])
+    size_kns = np.array([100, 200, 400, 800, 1200, 1600, 2000, 2500, 3000])
     if mode == 'nmse':
         MSE = np.mean((data - truth) ** 2, axis=0).astype(np.float64)
         ax.loglog(size_kns, MSE, c, label=label)
