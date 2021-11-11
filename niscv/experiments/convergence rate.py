@@ -73,8 +73,6 @@ def main(dim):
 
 
 if __name__ == '__main__':
-    main(2)
-    main(4)
+    main(3)
     main(6)
-    main(8)
-    main(10)
+    main(9)
