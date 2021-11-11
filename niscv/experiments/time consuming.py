@@ -6,36 +6,35 @@ import pickle
 
 
 def experiment(dim, order, size_est, sn, show, size_kn, ratio):
-    results = []
     mean = np.zeros(dim)
     target = lambda x: st.multivariate_normal(mean=mean).pdf(x)
     fun = lambda x: x[:, 0] ** order + 1
     init_proposal = st.multivariate_normal(mean=mean + 0.5, cov=4)
 
-    print(0)
+    start = dt.now()
     exp = Expectation(dim, target, fun, init_proposal, size_est, sn=sn, show=show)
     exp.initial_estimation(size_kn, ratio, resample=True)
-    print(1)
+    end1 = dt.now()
     exp.density_estimation(bw=1.0, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1)
     exp.nonparametric_estimation()
-    print(2)
+    end2 = dt.now()
     exp.regression_estimation()
-    print(3)
+    end3 = dt.now()
     exp.likelihood_estimation()
-    print(4)
-    return results
+    end4 = dt.now()
+    return [end1 - start, end2 - end1, end3 - end2, end4 - end3]
 
 
-def run(dim):
-    np.random.seed(19971107)
+def run(it, dim):
+    np.random.seed(1997 * it + 1107)
     settings = [[0, False], [1, False], [1, True], [2, False], [2, True]]
-    size_kns = [50, 100, 150, 200, 300, 400, 500, 600]
+    size_kns = [50, 100, 150, 200, 300, 400, 500, 700, 900, 1100]
 
     Results = []
     for setting in settings:
         results = []
         for size_kn in size_kns:
-            result = experiment(dim=dim, order=setting[0], size_est=10000, sn=setting[1],
+            result = experiment(dim=dim, order=setting[0], size_est=20000, sn=setting[1],
                                             show=False, size_kn=size_kn, ratio=1000)
             results.append(result)
 
@@ -45,8 +44,17 @@ def run(dim):
 
 
 def main(dim):
-    experiment(dim, order=2, size_est=100000, sn=True, show=True, size_kn=500, ratio=1000)
+    R = []
+    for i in range(10):
+        R.append(run(i, dim))
+
+    with open('time_' + str(dim) + 'D', 'wb') as file:
+        pickle.dump(R, file)
+
+    return R
 
 
 if __name__ == '__main__':
-    main(5)
+    R1 = main(4)
+    R2 = main(6)
+    R3 = main(8)
