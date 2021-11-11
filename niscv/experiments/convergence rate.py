@@ -68,7 +68,7 @@ def main(dim):
         end = dt.now()
         print((end - begin).seconds)
 
-    with open('convergence3_' + str(dim) + 'D', 'wb') as file:
+    with open('convergence4_' + str(dim) + 'D', 'wb') as file:
         pickle.dump(R, file)
 
 
