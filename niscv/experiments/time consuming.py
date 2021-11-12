@@ -3,6 +3,7 @@ import scipy.stats as st
 from niscv.basic.expectation import Expectation
 from datetime import datetime as dt
 import pickle
+import os
 
 
 def experiment(dim, order, size_est, sn, show, size_kn, ratio):
@@ -46,6 +47,7 @@ def run(it, dim):
 
 
 def main(dim):
+    os.environ['OMP_NUM_THREADS'] = '30'
     R = []
     for i in range(10):
         R.append(run(i, dim))
