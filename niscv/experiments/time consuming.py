@@ -26,12 +26,14 @@ def experiment(dim, order, size_est, sn, show, size_kn, ratio):
 
 
 def run(it, dim):
+    print(dim, it)
     np.random.seed(1997 * it + 1107)
     settings = [[0, False], [1, False], [1, True], [2, False], [2, True]]
     size_kns = [50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 1000]
 
     Results = []
     for setting in settings:
+        print(setting)
         results = []
         for size_kn in size_kns:
             result = experiment(dim=dim, order=setting[0], size_est=20000, sn=setting[1],

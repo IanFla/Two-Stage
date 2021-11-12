@@ -18,7 +18,7 @@ def plot(data, ax, label, c, mode='a-var', truth=None, n=''):
         n = 1000 * size_kns if n == 'IS' else 5000
         nMSE = n * np.mean((data - truth) ** 2, axis=0)
         ax.loglog(size_kns, nMSE, c, label=label)
-        fit = lm.LinearRegression().fit(np.log(size_kns.reshape([-1, 1])), np.log(nMSE), sample_weight=size_kns)
+        fit = lm.LinearRegression().fit(np.log(size_kns.reshape([-1, 1])), np.log(nMSE))
         return fit.coef_[0]
     elif mode == 'nvar':
         n = 1000 * size_kns if n == 'IS' else 5000
@@ -26,6 +26,7 @@ def plot(data, ax, label, c, mode='a-var', truth=None, n=''):
         ax.loglog(size_kns, nvar, c + '.', label=label)
     elif mode == 'a-var':
         avar_mean = data.mean(axis=0)
+        avar_mean = avar_mean * 5000 / (5000 - size_kns - 1) if n == 'RIS' else avar_mean
         ax.loglog(size_kns, avar_mean, c + '--', label=label)
     else:
         print('mode error! ')
@@ -49,7 +50,7 @@ def draw(dim, order, sn, ax):
     plot(data[:, index, :, 5], ax, label='MIS mean(a-var)', c='c', mode='a-var', truth=None)
     plot(data[:, index, :, 6], ax, label='RIS nMSE', c='r', mode='nmse', truth=truth)
     plot(data[:, index, :, 6], ax, label='RIS nVAR', c='r', mode='nvar', truth=truth)
-    plot(data[:, index, :, 7], ax, label='RIS mean(a-var)', c='r', mode='a-var', truth=None)
+    plot(data[:, index, :, 7], ax, label='RIS mean(a-var)', c='r', mode='a-var', truth=None, n='RIS')
     result.append(plot(data[:, index, :, 8], ax, label='MLE nMSE', c='k', mode='nmse', truth=truth))
     plot(data[:, index, :, 8], ax, label='MLE nVAR', c='k', mode='nvar', truth=truth)
     ax.set_xlabel('log(kernel number)')
