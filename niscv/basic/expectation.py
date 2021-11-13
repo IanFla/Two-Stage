@@ -127,16 +127,7 @@ class Expectation:
         self.mix_proposal = lambda x: alpha0 * self.init_proposal(x) + (1 - alpha0) * self.nonpar_proposal(x)
         self.mix_sampler = lambda size: np.vstack([self.init_sampler(round(alpha0 * size)),
                                                    self.nonpar_sampler(size - round(alpha0 * size))])
-
-        def controls(x):
-            out = np.zeros([self.centers.shape[0], x.shape[0]])
-            for j, center in enumerate(self.centers):
-                cov = self.kde.covs[j] if local else self.kde.covs
-                out[j] = self.kde.kernel_pdf(x=x, m=center, v=cov)
-
-            return out - self.mix_proposal(x)
-
-        self.controls = controls
+        self.controls = lambda x: self.kde.kernels(x) - self.mix_proposal(x)
 
     def nonparametric_estimation(self):
         samples = self.nonpar_sampler(self.size_est)
@@ -289,9 +280,9 @@ def experiment(dim, size_est, sn, show, size_kn, ratio):
 def main(sn):
     np.random.seed(3033079628)
     results = []
-    for i in range(100):
+    for i in range(20):
         print(i + 1)
-        result = experiment(dim=4, size_est=25000, sn=sn, show=False, size_kn=500, ratio=20)
+        result = experiment(dim=4, size_est=10000, sn=sn, show=False, size_kn=300, ratio=20)
         results.append(result)
 
     return np.array(results)
@@ -309,8 +300,8 @@ if __name__ == '__main__':
     print('a-var(r):', np.round(mean_aVar + 1.96 * std_aVar, 4))
 
     MSE = np.mean((R[:, ::2] - truth) ** 2, axis=0)
-    print('nMSE:', np.round(np.append(10000 * MSE[0], 25000 * MSE[1:]), 4))
+    print('nMSE:', np.round(np.append(6000 * MSE[0], 10000 * MSE[1:]), 4))
 
-    aErr = np.sqrt(np.hstack([aVar[:, 0].reshape([-1, 1]) / 10000, aVar[:, 1:] / 25000]))
+    aErr = np.sqrt(np.hstack([aVar[:, 0].reshape([-1, 1]) / 6000, aVar[:, 1:] / 10000]))
     Flag = (truth >= R[:, ::2] - 1.96 * aErr) & (truth <= R[:, ::2] + 1.96 * aErr)
     print('C.I.:', Flag.mean(axis=0))

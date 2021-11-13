@@ -62,6 +62,14 @@ class KDE:
 
         return samples
 
+    def kernels(self, x):
+        out = np.zeros([self.centers.shape[0], x.shape[0]])
+        for j, center in enumerate(self.centers):
+            cov = self.covs[j] if self.local else self.covs
+            out[j] = self.kernel_pdf(x=x, m=center, v=cov)
+
+        return out
+
 
 def main(bw, factor, local, gamma, df, seed=19971107):
     np.random.seed(seed)
