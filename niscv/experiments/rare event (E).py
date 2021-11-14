@@ -70,7 +70,7 @@ def run(it, b):
 
 def main(b):
     os.environ['OMP_NUM_THREADS'] = '2'
-    with multiprocessing.Pool(processes=10) as pool:
+    with multiprocessing.Pool(processes=16) as pool:
         begin = dt.now()
         its = np.arange(100)
         R = pool.map(partial(run, b=b), its)
