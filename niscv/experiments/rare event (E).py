@@ -72,7 +72,7 @@ def main(b):
     os.environ['OMP_NUM_THREADS'] = '2'
     with multiprocessing.Pool(processes=3) as pool:
         begin = dt.now()
-        its = np.arange(100)
+        its = np.arange(1000)
         R = pool.map(partial(run, b=b), its)
         end = dt.now()
         print((end - begin).seconds)
