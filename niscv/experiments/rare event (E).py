@@ -72,7 +72,7 @@ def main(b):
     os.environ['OMP_NUM_THREADS'] = '2'
     with multiprocessing.Pool(processes=16) as pool:
         begin = dt.now()
-        its = np.arange(200)
+        its = np.arange(16)
         R = pool.map(partial(run, b=b), its)
         end = dt.now()
         print((end - begin).seconds)
@@ -82,4 +82,16 @@ def main(b):
 
 
 if __name__ == '__main__':
-    main(2.0)
+    # main(2.0)
+    experiment(dim=5, b=2, size_est=10000, show=True, size_kn=500, ratio=1000, resample=False,
+               auto=True, k=1)
+    experiment(dim=5, b=2, size_est=10000, show=True, size_kn=500, ratio=5,
+               resample=True, auto=True, k=1)
+    experiment(dim=5, b=2, size_est=10000, show=True, size_kn=500, ratio=5,
+               resample=True, auto=False, k=None)
+    experiment(dim=5, b=2, size_est=10000, show=True, size_kn=500, ratio=5,
+               resample=True, auto=True, k=2)
+    experiment(dim=5, b=2, size_est=10000, show=True, size_kn=500, ratio=5,
+               resample=True, auto=True, k=3)
+    experiment(dim=5, b=2, size_est=10000, show=True, size_kn=500, ratio=5,
+               resample=True, auto=True, k=4)
