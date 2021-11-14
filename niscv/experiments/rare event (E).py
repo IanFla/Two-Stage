@@ -45,7 +45,7 @@ def experiment(dim, b, size_est, show, size_kn, ratio, resample=True, auto=False
 
 def run(it, b):
     np.random.seed(1997 * it + 1107)
-    print(it)
+    print(it, end=' ')
     settings = [[True, 1], [False, None], [True, 2], [True, 3], [True, 4]]
     ratios = [5, 10, 15, 20, 30, 50, 70, 100, 150, 200, 500, 1000]
 
@@ -54,7 +54,6 @@ def run(it, b):
     Results = [result]
     Results_all = [result_all]
     for setting in settings:
-        print(setting)
         results = []
         results_all = []
         for ratio in ratios:
@@ -71,9 +70,9 @@ def run(it, b):
 
 def main(b):
     os.environ['OMP_NUM_THREADS'] = '2'
-    with multiprocessing.Pool(processes=2) as pool:
+    with multiprocessing.Pool(processes=3) as pool:
         begin = dt.now()
-        its = np.arange(2)
+        its = np.arange(100)
         R = pool.map(partial(run, b=b), its)
         end = dt.now()
         print((end - begin).seconds)
