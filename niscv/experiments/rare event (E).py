@@ -82,4 +82,6 @@ def main(b):
 
 
 if __name__ == '__main__':
-    main(2.0)
+    # main(2.0)
+    experiment(dim=5, b=2.0, size_est=10000, show=False, size_kn=500, ratio=1000,
+               resample=True, auto=True, k=2)
