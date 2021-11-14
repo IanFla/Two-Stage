@@ -83,13 +83,4 @@ def main(b):
 
 if __name__ == '__main__':
     # main(2.0)
-    np.random.seed(19971107)
-    R1 = experiment(dim=5, b=2.0, size_est=10000, show=False, size_kn=500, ratio=1000,
-                    resample=False, auto=True, k=1)
-    R2 = experiment(dim=5, b=2.0, size_est=10000, show=False, size_kn=500, ratio=1000,
-                    resample=True, auto=True, k=1)
-    R3 = experiment(dim=5, b=2.0, size_est=10000, show=False, size_kn=500, ratio=1000,
-                     resample=True, auto=True, k=2)
-    print(R1)
-    print(R2)
-    print(R3)
+    print(run(it=1, b=2.0))
