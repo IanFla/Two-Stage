@@ -82,5 +82,4 @@ def main(b):
 
 
 if __name__ == '__main__':
-    # main(2.0)
-    print(run(it=1, b=2.0))
+    main(2.0)
