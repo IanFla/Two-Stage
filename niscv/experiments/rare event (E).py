@@ -45,7 +45,7 @@ def experiment(dim, b, size_est, show, size_kn, ratio, resample=True, mode=0):
 
 def run(it, b):
     np.random.seed(1997 * it + 1107)
-    print(it, ' ')
+    print(it, end=' ')
     settings = [1, 0, 2, 3, 4, 5]
     ratios = [5, 10, 15, 20, 30, 50, 70, 100, 150, 200, 500, 1000]
 
