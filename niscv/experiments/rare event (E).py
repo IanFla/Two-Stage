@@ -43,7 +43,8 @@ def experiment(dim, b, size_est, show, size_kn, ratio, resample=True, auto=False
     return results, pro.result
 
 
-def run(it, b):
+def run(it):
+    b = 2.0
     np.random.seed(1997 * it + 1107)
     print(it)
     settings = [[True, 1], [False, None], [True, 2], [True, 3], [True, 4]]
@@ -69,18 +70,19 @@ def run(it, b):
     return [Results, Results_all]
 
 
-def main(b):
+def main():
     os.environ['OMP_NUM_THREADS'] = '2'
     with multiprocessing.Pool(processes=2) as pool:
         begin = dt.now()
         its = np.arange(2)
-        R = pool.map(partial(run, b=b), its)
+        # R = pool.map(partial(run, b=b), its)
+        R = pool.map(run, its)
         end = dt.now()
         print((end - begin).seconds)
 
-    with open('rare_(' + str(b) + ')', 'wb') as file:
+    with open('rare_(' + str(2.0) + ')', 'wb') as file:
         pickle.dump(R, file)
 
 
 if __name__ == '__main__':
-    main(2.0)
+    main()
