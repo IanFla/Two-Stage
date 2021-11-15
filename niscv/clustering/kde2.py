@@ -8,17 +8,19 @@ from niscv.basic.kde import KDE
 
 
 class KDE2:
-    def __init__(self, centers, weights, bw, auto=True, factor='scott', local=False, gamma=0.3, df=0, k=1, labels=None):
-        if auto:
+    def __init__(self, centers, weights, bw, mode=0, factor='scott', local=False, gamma=0.3, df=0, labels=None):
+        if mode == 1:
+            labels = np.zeros(centers.shape[0]).astype(np.int32)
+        elif mode > 1:
             scaler = StandardScaler().fit(centers, sample_weight=weights)
-            kmeans = KMeans(n_clusters=k).fit(scaler.transform(centers), sample_weight=weights)
+            kmeans = KMeans(n_clusters=mode).fit(scaler.transform(centers), sample_weight=weights)
             labels = kmeans.labels_
 
-        nums = np.array([weights[labels == i].sum() for i in range(labels.max() + 1)]).T
+        nums = np.array([weights[labels == i].sum() for i in range(labels.max(initial=0) + 1)]).T
         self.prop = nums / nums.sum()
 
         self.kdes = []
-        for i in range(labels.max() + 1):
+        for i in range(labels.max(initial=0) + 1):
             label = (labels == i)
             self.kdes.append(KDE(centers[label], weights[label], bw, factor, local, gamma, df))
 
@@ -37,7 +39,7 @@ class KDE2:
         return np.vstack([kde.kernels(x) for kde in self.kdes])
 
 
-def main(bw, factor, local, gamma, df, k, seed=19971107):
+def main(bw, factor, local, gamma, df, mode, seed=19971107):
     np.random.seed(seed)
     target = lambda x: 0.7 * st.multivariate_normal(mean=[-1, 0], cov=0.4).pdf(x) + \
                        0.3 * st.multivariate_normal(mean=[2, 0], cov=0.2).pdf(x)
@@ -47,7 +49,7 @@ def main(bw, factor, local, gamma, df, k, seed=19971107):
 
     kde1 = KDE(centers, weights, bw, factor=factor, local=local, gamma=gamma, df=df)
     samples1 = kde1.rvs(size=2000)
-    kde2 = KDE2(centers, weights, bw, auto=True, factor=factor, local=local, gamma=gamma, df=df, k=k)
+    kde2 = KDE2(centers, weights, bw, mode=mode, factor=factor, local=local, gamma=gamma, df=df)
     samples2 = kde2.rvs(size=2000)
 
     grid_x = np.linspace(-4, 4, 200)
@@ -90,4 +92,4 @@ def main(bw, factor, local, gamma, df, k, seed=19971107):
 
 
 if __name__ == '__main__':
-    main(bw=1.0, factor='scott', local=False, gamma=0.3, df=0, k=3)
+    main(bw=1.0, factor='scott', local=False, gamma=0.3, df=0, mode=3)

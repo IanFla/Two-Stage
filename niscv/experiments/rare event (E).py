@@ -8,7 +8,7 @@ from datetime import datetime as dt
 import pickle
 
 
-def experiment(dim, b, size_est, show, size_kn, ratio, resample=True, auto=False, k=None):
+def experiment(dim, b, size_est, show, size_kn, ratio, resample=True, mode=0):
     results = []
     mean = np.zeros(dim)
     target = lambda x: st.multivariate_normal(mean=mean).pdf(x)
@@ -25,7 +25,7 @@ def experiment(dim, b, size_est, show, size_kn, ratio, resample=True, auto=False
     if pro.show:
         pro.draw(grid_x, name='initial')
 
-    pro.density_estimation(bw=1.0, auto=auto, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1, k=k)
+    pro.density_estimation(bw=1.0, mode=mode, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1)
     pro.nonparametric_estimation()
     results.extend([pro.result[-4], pro.result[-3], pro.result[-2], pro.result[-1]])
     if pro.show:
@@ -45,12 +45,12 @@ def experiment(dim, b, size_est, show, size_kn, ratio, resample=True, auto=False
 
 def run(it, b):
     np.random.seed(1997 * it + 1107)
-    print(it)
-    settings = [[True, 1], [False, None], [True, 2], [True, 3], [True, 4]]
+    print(it, ' ')
+    settings = [1, 0, 2, 3, 4, 5]
     ratios = [5, 10, 15, 20, 30, 50, 70, 100, 150, 200, 500, 1000]
 
-    result, result_all = experiment(dim=5, b=b, size_est=10000, show=False, size_kn=500, ratio=1000, resample=False,
-                                    auto=True, k=1)
+    result, result_all = experiment(dim=5, b=b, size_est=10000, show=False, size_kn=500,
+                                    ratio=1000, resample=False, mode=1)
     Results = [result]
     Results_all = [result_all]
     for setting in settings:
@@ -58,8 +58,7 @@ def run(it, b):
         results_all = []
         for ratio in ratios:
             result, result_all = experiment(dim=5, b=b, size_est=10000, show=False, size_kn=500, ratio=ratio,
-                                            resample=True, auto=setting[0], k=setting[1])
-            print(it, setting, ratio)
+                                            resample=True, mode=setting)
             results.append(result)
             results_all.append(result_all)
 
@@ -71,9 +70,9 @@ def run(it, b):
 
 def main(b):
     os.environ['OMP_NUM_THREADS'] = '2'
-    with multiprocessing.Pool(processes=3) as pool:
+    with multiprocessing.Pool(processes=16) as pool:
         begin = dt.now()
-        its = np.arange(10)
+        its = np.arange(100)
         R = pool.map(partial(run, b=b), its)
         end = dt.now()
         print((end - begin).seconds)
