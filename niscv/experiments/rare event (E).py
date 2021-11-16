@@ -12,13 +12,14 @@ def experiment(dim, b, size_est, show, size_kn, ratio, resample=True, mode=0):
     results = []
     mean = np.zeros(dim)
     target = lambda x: st.multivariate_normal(mean=mean).pdf(x)
-    indicator = lambda x: 1 * (x[:, 0] > b)
+    indicator = lambda x: 1 * (x[:, 0] >= b)
     init_proposal = st.multivariate_normal(mean=mean, cov=4)
     grid_x = np.linspace(-5, 5, 200)
     pro = Probability(dim, target, indicator, init_proposal, size_est, show=show)
     pro.initial_estimation(size_kn, ratio, resample=resample)
     if resample:
-        results.extend([pro.result[-5], pro.result[-4]])
+        ESS = 1 / np.sum((pro.weights_kn / pro.weights_kn.sum()) ** 2)
+        results.extend([pro.result[-5], pro.result[-4], pro.result[-3], pro.result[-2], pro.result[-1], ESS])
     else:
         results.extend([pro.result[-2], pro.result[-1]])
 
@@ -46,40 +47,36 @@ def experiment(dim, b, size_est, show, size_kn, ratio, resample=True, mode=0):
 def run(it, b):
     np.random.seed(1997 * it + 1107)
     print(it, end=' ')
-    settings = [1, 0, 2, 3, 4, 5]
-    ratios = [5, 10, 15, 20, 30, 50, 70, 100, 150, 200, 500, 1000]
+    ratios = [2, 4, 6, 8, 10, 15, 20, 25, 30, 40, 50, 60, 80, 100, 200, 500, 1000]
 
     result, result_all = experiment(dim=5, b=b, size_est=10000, show=False, size_kn=500,
                                     ratio=1000, resample=False, mode=1)
-    Results = [result]
-    Results_all = [result_all]
-    for setting in settings:
-        results = []
-        results_all = []
-        for ratio in ratios:
-            result, result_all = experiment(dim=5, b=b, size_est=10000, show=False, size_kn=500, ratio=ratio,
-                                            resample=True, mode=setting)
-            results.append(result)
-            results_all.append(result_all)
+    results = [result]
+    results_all = [result_all]
+    for ratio in ratios:
+        result, result_all = experiment(dim=5, b=b, size_est=10000, show=False, size_kn=500,
+                                        ratio=ratio, resample=True, mode=1)
+        results.append(result)
+        results_all.append(result_all)
 
-        Results.append(results)
-        Results_all.append(results_all)
-
-    return [Results, Results_all]
+    return [results, results_all]
 
 
 def main(b):
     os.environ['OMP_NUM_THREADS'] = '2'
     with multiprocessing.Pool(processes=16) as pool:
         begin = dt.now()
-        its = np.arange(100)
+        its = np.arange(1000)
         R = pool.map(partial(run, b=b), its)
         end = dt.now()
         print((end - begin).seconds)
 
-    with open('rare2_(' + str(b) + ')', 'wb') as file:
+    with open('rare3_(' + str(b) + ')', 'wb') as file:
         pickle.dump(R, file)
 
 
 if __name__ == '__main__':
-    main(2.0)
+    main(0)
+    main(1)
+    main(2)
+    main(3)
