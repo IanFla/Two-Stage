@@ -62,8 +62,8 @@ def main(b, ax):
     ratios = np.array([2, 4, 6, 8, 10, 15, 20, 25, 30, 40, 50, 60, 80, 100, 200, 500, 1000])
     DSS09 = ratios[SS_m0 > 0.9][0]
 
-    nMSE1 = 10000 * np.mean((data1[:, 2::2] - truth) ** 2, axis=0)
-    nMSE2 = 10000 * np.mean((data21[:, 0, 2:-1:2] - truth) ** 2, axis=0)
+    nMSE1 = 10000 * np.mean((data1[:, 4::2] - truth) ** 2, axis=0)
+    nMSE2 = 10000 * np.mean((data21[:, 0, 4:-1:2] - truth) ** 2, axis=0)
 
     return 2 * n0_ESS, DSS09, nMSE1, nMSE2
 
