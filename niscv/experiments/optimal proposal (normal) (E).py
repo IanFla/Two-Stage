@@ -45,7 +45,7 @@ def main():
     for i, setting in enumerate(settings):
         fig, ax = plt.subplots(figsize=[8, 6])
         experiment(dim=4, order=setting[0], size_est=5000, sn=setting[1], size_kn=300, ratio=1000, ax=ax)
-        ax.legend()
+        ax.legend(loc=1)
         name = '4D, M' + str(setting[0]) + ', SN(' + str(setting[1]) + ')'
         ax.set_title(name)
         fig.tight_layout()
