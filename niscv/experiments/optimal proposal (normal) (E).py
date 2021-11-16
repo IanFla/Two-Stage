@@ -19,7 +19,7 @@ def experiment(dim, order, size_est, sn, size_kn, ratio, ax):
     opt = exp.opt_proposal(grid_X)
     init = exp.init_proposal(grid_X)
     ax.plot(grid_x, opt, c='k', label='optimal proposal')
-    ax.plot(grid_x, opt.max() * init / init.max(), c='b', label='initial proposal')
+    ax.plot(grid_x, opt.max() * init / init.max() / 10, c='b', label='initial proposal')
     results.extend([exp.result[-5], exp.result[-4]])
     exp.density_estimation(bw=1.0, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1)
     exp.nonparametric_estimation()
