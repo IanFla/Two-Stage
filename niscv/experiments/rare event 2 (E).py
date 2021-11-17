@@ -47,15 +47,15 @@ def experiment(dim, b, size_est, show, size_kn, ratio, resample=True, mode=0):
 def run(it, b):
     np.random.seed(1997 * it + 1107)
     print(it, end=' ')
-    ratios = [2, 4, 6, 8, 10, 15, 20, 25, 30, 40, 50, 60, 80, 100, 200, 500, 1000]
+    modes = [1, 0, 2, 3, 4, 5]
 
     result, result_all = experiment(dim=5, b=b, size_est=10000, show=False, size_kn=500,
                                     ratio=1000, resample=False, mode=1)
     results = [result]
     results_all = [result_all]
-    for ratio in ratios:
+    for mode in modes:
         result, result_all = experiment(dim=5, b=b, size_est=10000, show=False, size_kn=500,
-                                        ratio=ratio, resample=True, mode=1)
+                                        ratio=1000, resample=True, mode=mode)
         results.append(result)
         results_all.append(result_all)
 
@@ -76,7 +76,4 @@ def main(b):
 
 
 if __name__ == '__main__':
-    main(0)
-    main(1)
     main(2)
-    main(3)
