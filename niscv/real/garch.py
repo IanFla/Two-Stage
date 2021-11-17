@@ -13,8 +13,12 @@ warnings.filterwarnings("ignore")
 
 
 class GARCH:
-    def __init__(self):
-        df = pd.read_csv('/home/r7user5/Documents/ZY/Two-Stage/niscv/data/garch/SP500.csv')
+    def __init__(self, server=True):
+        if server:
+            df = pd.read_csv('/home/r7user5/Documents/ZY/Two-Stage/niscv/data/garch/SP500.csv')
+        else:
+            df = pd.read_csv('/Users/ianfla/Documents/GitHub/Two-Stage/niscv/data/garch/SP500.csv')
+
         data = df.VALUE.values[1:] - df.VALUE.values[:-1]
         ys = 100 * data[2700:2900]
         self.h0 = np.std(ys)
@@ -136,7 +140,7 @@ class GARCH:
 
 
 def main():
-    garch = GARCH()
+    garch = GARCH(server=True)
     estimate = garch.laplace(inflate=2, df=1)
 
     def run(it):
