@@ -73,4 +73,6 @@ def main(b):
 
 
 if __name__ == '__main__':
-    main(2)
+    main(0)
+    main(1)
+    main(3)
