@@ -149,8 +149,8 @@ def run(it):
 
 
 def main():
-    os.environ['OMP_NUM_THREADS'] = '2'
-    with multiprocessing.Pool(processes=16) as pool:
+    os.environ['OMP_NUM_THREADS'] = '1'
+    with multiprocessing.Pool(processes=32) as pool:
         begin = dt.now()
         its = np.arange(1000)
         R = pool.map(run, its)
