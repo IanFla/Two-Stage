@@ -140,12 +140,12 @@ class GARCH:
 
 
 garch = GARCH(server=True)
-estimate = garch.laplace(inflate=2, df=1)
+est = garch.laplace(inflate=2, df=1)
 
 
 def run(it):
     print(it)
-    return estimate(100000000)
+    return est(100000000)
 
 
 def main():
