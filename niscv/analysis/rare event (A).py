@@ -58,9 +58,9 @@ def main(b, ax):
 
     SS_mean = data22.mean(axis=0)
     n0_ESS = 1000 * 500 / SS_mean[-1, 0]
-    SS_m0 = SS_mean[:, 1] / 500
+    m_m0 = SS_mean[:, 1] / 500
     ratios = np.array([2, 4, 6, 8, 10, 15, 20, 25, 30, 40, 50, 60, 80, 100, 200, 500, 1000])
-    DSS09 = ratios[SS_m0 > 0.9][0]
+    DSS09 = ratios[m_m0 > 0.9][0]
 
     nMSE1 = 10000 * np.mean((data1[:, 4::2] - truth) ** 2, axis=0)
     nMSE2 = 10000 * np.mean((data21[:, 0, 4:-1:2] - truth) ** 2, axis=0)
