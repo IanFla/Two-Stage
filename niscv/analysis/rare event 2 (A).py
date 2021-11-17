@@ -52,7 +52,10 @@ def main(b, ax):
     truth = st.norm.cdf(-b)
     print('reference:', truth * (1 - truth), 4 * (truth * (1 - truth)) ** 2)
     draw(data=data, truth=truth, ax=ax)
-    ax.legend()
+    modes = ['none', 'auto', 'km(2)', 'km(3)', 'km(4)', 'km(5)']
+    ax.semilogy(modes, truth * (1 - truth) * np.ones(6), '-.', color='orange', label='reference 1')
+    ax.semilogy(modes, 4 * (truth * (1 - truth)) ** 2 * np.ones(6), 'm-.', label='reference 2')
+    ax.legend(loc=1)
     ax.set_title('b(' + str(b) + ')')
 
 
