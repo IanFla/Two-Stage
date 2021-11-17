@@ -139,14 +139,16 @@ class GARCH:
         return out
 
 
+garch = GARCH(server=True)
+estimate = garch.laplace(inflate=2, df=1)
+
+
+def run(it):
+    print(it)
+    return estimate(100000000)
+
+
 def main():
-    garch = GARCH(server=True)
-    estimate = garch.laplace(inflate=2, df=1)
-
-    def run(it):
-        print(it)
-        return estimate(100000000)
-
     os.environ['OMP_NUM_THREADS'] = '2'
     with multiprocessing.Pool(processes=16) as pool:
         begin = dt.now()
