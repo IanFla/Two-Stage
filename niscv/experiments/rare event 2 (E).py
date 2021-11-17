@@ -18,8 +18,7 @@ def experiment(dim, b, size_est, show, size_kn, ratio, resample=True, mode=0):
     pro = Probability(dim, target, indicator, init_proposal, size_est, show=show)
     pro.initial_estimation(size_kn, ratio, resample=resample)
     if resample:
-        ESS = 1 / np.sum((pro.weights_kn / pro.weights_kn.sum()) ** 2)
-        results.extend([pro.result[-5], pro.result[-4], pro.result[-3], pro.result[-2], pro.result[-1], ESS])
+        results.extend([pro.result[-5], pro.result[-4]])
     else:
         results.extend([pro.result[-2], pro.result[-1]])
 
@@ -49,10 +48,8 @@ def run(it, b):
     print(it, end=' ')
     modes = [1, 0, 2, 3, 4, 5]
 
-    result, result_all = experiment(dim=5, b=b, size_est=10000, show=False, size_kn=500,
-                                    ratio=1000, resample=False, mode=1)
-    results = [result]
-    results_all = [result_all]
+    results = []
+    results_all = []
     for mode in modes:
         result, result_all = experiment(dim=5, b=b, size_est=10000, show=False, size_kn=500,
                                         ratio=1000, resample=True, mode=mode)
@@ -71,7 +68,7 @@ def main(b):
         end = dt.now()
         print((end - begin).seconds)
 
-    with open('rare3_(' + str(b) + ')', 'wb') as file:
+    with open('rare4_(' + str(b) + ')', 'wb') as file:
         pickle.dump(R, file)
 
 
