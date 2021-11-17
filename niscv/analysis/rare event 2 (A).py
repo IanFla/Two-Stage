@@ -17,6 +17,7 @@ def plot(data, ax, label, c, mode='a-var', truth=None, control=''):
     if mode == 'nmse':
         nMSE = n * np.mean((data - truth) ** 2, axis=0)
         ax.semilogy(modes, nMSE, c, label=label)
+        print(nMSE)
     elif mode == 'nvar':
         nvar = n * np.var(data, axis=0)
         ax.semilogy(modes, nvar, c + '.', label=label)
@@ -49,6 +50,7 @@ def draw(data, truth, ax):
 def main(b, ax):
     data = read(b)
     truth = st.norm.cdf(-b)
+    print('reference:', truth * (1 - truth), 4 * (truth * (1 - truth)) ** 2)
     draw(data=data, truth=truth, ax=ax)
     ax.legend()
     ax.set_title('b(' + str(b) + ')')
