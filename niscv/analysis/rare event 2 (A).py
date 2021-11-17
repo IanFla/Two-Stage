@@ -57,6 +57,6 @@ def main(b, ax):
 if __name__ == '__main__':
     plt.style.use('ggplot')
     fig, axs = plt.subplots(1, 1, figsize=[8, 6])
-    main(b=1, ax=axs)
+    main(b=2, ax=axs)
     fig.tight_layout()
     fig.show()
