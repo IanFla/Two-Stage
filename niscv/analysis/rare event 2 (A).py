@@ -16,14 +16,14 @@ def plot(data, ax, label, c, mode='a-var', truth=None, control=''):
     n = 500 * 1000 if control == 'IS' else 10000
     if mode == 'nmse':
         nMSE = n * np.mean((data - truth) ** 2, axis=0)
-        ax.plot(modes, np.log(nMSE), c, label=label)
+        ax.semilogy(modes, nMSE, c, label=label)
     elif mode == 'nvar':
         nvar = n * np.var(data, axis=0)
-        ax.plot(modes, np.log(nvar), c + '.', label=label)
+        ax.semilogy(modes, nvar, c + '.', label=label)
     elif mode == 'a-var':
         avar_mean = data.mean(axis=0)
         avar_mean = avar_mean * 10000 / (10000 - 500 - 1) if control == 'RIS' else avar_mean
-        ax.plot(modes, np.log(avar_mean), c + '--', label=label)
+        ax.semilogy(modes, avar_mean, c + '--', label=label)
     else:
         print('mode error! ')
 
@@ -57,6 +57,6 @@ def main(b, ax):
 if __name__ == '__main__':
     plt.style.use('ggplot')
     fig, axs = plt.subplots(1, 1, figsize=[8, 6])
-    main(b=2, ax=axs)
+    main(b=1, ax=axs)
     fig.tight_layout()
     fig.show()

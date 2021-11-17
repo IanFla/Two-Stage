@@ -2,7 +2,7 @@ import numpy as np
 from matplotlib import pyplot as plt
 from wquantiles import quantile
 from particles import resampling as rs
-from niscv.clustering.kde2 import KDE2
+from niscv.basic.kde import KDE
 import sklearn.linear_model as lm
 from datetime import datetime as dt
 import scipy.optimize as opt
@@ -26,7 +26,6 @@ class Quantile:
         self.init_sampler = init_proposal.rvs
         self.size_est = size_est
 
-        self.indicator = None
         self.opt_proposal = None
         self.centers = None
         self.weights_kn = None
@@ -75,7 +74,6 @@ class Quantile:
         self.__estimate(weights, statistics, 'IS')
 
         VaR = self.result[-2]
-        self.indicator = lambda x: 1 * (self.statistic(x) <= VaR)
         self.opt_proposal = lambda x: self.target(x) * np.abs((self.statistic(x) <= VaR) - self.alpha)
         weights_kn = self.__divi(self.opt_proposal(samples), self.init_proposal(samples))
         ESS = 1 / np.sum((weights_kn / weights_kn.sum()) ** 2)
@@ -89,15 +87,28 @@ class Quantile:
         self.disp('Resampling rate: {}/{}'.format(self.weights_kn.size, size_kn))
         self.result.append(self.weights_kn.size)
 
-    def density_estimation(self, bw=1.0, mode=0, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1):
-        self.kde = KDE2(self.centers, self.weights_kn, labels=self.indicator(self.centers), bw=bw,
-                        mode=mode, factor=factor, local=local, gamma=gamma, df=df)
+    def density_estimation(self, bw=1.0, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1):
+        self.kde = KDE(self.centers, self.weights_kn, bw=bw, factor=factor, local=local, gamma=gamma, df=df)
+        bdwths = np.sqrt(np.diag(self.kde.covs.mean(axis=0) if local else self.kde.covs))
+        self.disp('KDE: (bdwth: {:.4f} ({:.4f}), factor {:.4f})'
+                  .format(bdwths[0], np.mean(bdwths[1:]), self.kde.factor))
+        self.result.extend([bdwths[0], np.mean(bdwths[1:])])
+
         self.nonpar_proposal = self.kde.pdf
         self.nonpar_sampler = self.kde.rvs
         self.mix_proposal = lambda x: alpha0 * self.init_proposal(x) + (1 - alpha0) * self.nonpar_proposal(x)
         self.mix_sampler = lambda size: np.vstack([self.init_sampler(round(alpha0 * size)),
                                                    self.nonpar_sampler(size - round(alpha0 * size))])
-        self.controls = lambda x: self.kde.kernels(x) - self.mix_proposal(x)
+
+        def controls(x):
+            out = np.zeros([self.centers.shape[0], x.shape[0]])
+            for j, center in enumerate(self.centers):
+                cov = self.kde.covs[j] if local else self.kde.covs
+                out[j] = self.kde.kernel_pdf(x=x, m=center, v=cov)
+
+            return out - self.mix_proposal(x)
+
+        self.controls = controls
 
     def nonparametric_estimation(self):
         samples = self.nonpar_sampler(self.size_est)
@@ -195,7 +206,7 @@ class Quantile:
         plt.show()
 
 
-def experiment(dim, alpha, size_est, show, size_kn, ratio, mode):
+def experiment(dim, alpha, size_est, show, size_kn, ratio):
     results = []
     mean = np.zeros(dim)
     target = lambda x: st.multivariate_normal(mean=mean).pdf(x)
@@ -208,7 +219,7 @@ def experiment(dim, alpha, size_est, show, size_kn, ratio, mode):
     if qtl.show:
         qtl.draw(grid_x, name='initial')
 
-    qtl.density_estimation(bw=1.0, mode=mode, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1)
+    qtl.density_estimation(bw=1.0, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1)
     qtl.nonparametric_estimation()
     results.extend([qtl.result[-4], qtl.result[-3], qtl.result[-2], qtl.result[-1]])
     if qtl.show:
@@ -229,7 +240,7 @@ def main():
     results = []
     for i in range(100):
         print(i + 1)
-        result = experiment(dim=4, alpha=0.05, size_est=25000, show=False, size_kn=500, ratio=20, mode=1)
+        result = experiment(dim=4, alpha=0.05, size_est=25000, show=False, size_kn=500, ratio=20)
         results.append(result)
 
     return np.array(results)
