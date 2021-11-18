@@ -50,10 +50,10 @@ class GARCH:
         Sigma = np.linalg.inv(nd.Hessian(target)(mu))
         Sigma[:, 0] *= inflate
         Sigma[0, :] *= inflate
-        rvs_full = lambda size: np.array([st.t.rvs(size=size, df=df, loc=mu[i],
-                                                   scale=np.sqrt(Sigma[i, i])) for i in range(3)]).T
         pdf_full = lambda pars: np.prod([st.t.pdf(x=pars[:, i], df=df, loc=mu[i],
                                                   scale=np.sqrt(Sigma[i, i])) for i in range(3)], axis=0)
+        rvs_full = lambda size: np.array([st.t.rvs(size=size, df=df, loc=mu[i],
+                                                   scale=np.sqrt(Sigma[i, i])) for i in range(3)]).T
 
         def estimate(size):
             samples = rvs_full(size)
@@ -61,18 +61,18 @@ class GARCH:
             err = np.sqrt(p * (1 - p) / size)
             return p, [p - 2 * err, p + 2 * err]
 
-        def rvs_trunc(size):
-            pars = rvs_full(int(2 * size / p_acc))
-            good = self.__test(pars)
-            return pars[good][:size]
-
         def pdf_trunc(pars):
             pdf = pdf_full(pars)
             good = self.__test(pars)
             return good * pdf / p_acc
 
-        self.rvs_trunc = rvs_trunc
+        def rvs_trunc(size):
+            pars = rvs_full(int(2 * size / p_acc))
+            good = self.__test(pars)
+            return pars[good][:size]
+
         self.pdf_trunc = pdf_trunc
+        self.rvs_trunc = rvs_trunc
         return estimate
 
     @staticmethod
