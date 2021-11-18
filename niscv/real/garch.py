@@ -3,10 +3,6 @@ import pandas as pd
 import scipy.stats as st
 import scipy.optimize as opt
 import numdifftools as nd
-import multiprocessing
-import os
-import pickle
-from datetime import datetime as dt
 import warnings
 
 warnings.filterwarnings("ignore")
@@ -42,7 +38,7 @@ class GARCH:
     def __test(pars):
         return (pars[:, 1] >= 0) & (pars[:, 2] >= 0) & (pars[:, 1] + pars[:, 2] < 1)
 
-    def laplace(self, inflate=2, df=1, p_acc=0.48195):
+    def laplace(self, inflate=2, df=1, p_acc=0.48194609111):
         cons = ({'type': 'ineq',
                  'fun': lambda pars: np.array([pars[1], pars[2], 1 - pars[1] - pars[2]]),
                  'jac': lambda x: np.array([[0, 1, 0], [0, 0, 1], [0, -1, -1]])})
@@ -139,26 +135,9 @@ class GARCH:
         return out
 
 
-garch = GARCH(server=True)
-est = garch.laplace(inflate=2, df=1)
-
-
-def run(it):
-    print(it)
-    return est(100000000)
-
-
 def main():
-    os.environ['OMP_NUM_THREADS'] = '1'
-    with multiprocessing.Pool(processes=32) as pool:
-        begin = dt.now()
-        its = np.arange(1000)
-        R = pool.map(run, its)
-        end = dt.now()
-        print((end - begin).seconds)
-
-    with open('../data/garch/p_acc', 'wb') as file:
-        pickle.dump(R, file)
+    garch = GARCH(server=False)
+    garch.laplace(inflate=2, df=1)
 
 
 if __name__ == '__main__':
