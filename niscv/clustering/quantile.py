@@ -12,6 +12,22 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
+class KDE3(KDE2):
+    def __init__(self, centers, weights, bw, labels, km=1, factor='scott', local=False, gamma=0.3, df=0):
+        super().__init__(centers, weights, bw)
+        self.kdes = []
+        self.labels = km * labels
+        for i in range(labels.max(initial=0) + 1):
+            label = (labels == i)
+            kde = KDE2(centers[label], weights[label], bw,
+                       mode=km, factor=factor, local=local, gamma=gamma, df=df)
+            self.labels[label] += kde.labels
+            self.kdes.extend(kde.kdes)
+
+        nums = np.array([weights[self.labels == i].sum() for i in range(self.labels.max(initial=0) + 1)])
+        self.prop = nums / nums.sum()
+
+
 class Quantile:
     def __init__(self, dim, target, statistic, alpha, init_proposal, size_est, show=True):
         self.dim = dim
@@ -89,9 +105,9 @@ class Quantile:
         self.disp('Resampling rate: {}/{}'.format(self.weights_kn.size, size_kn))
         self.result.append(self.weights_kn.size)
 
-    def density_estimation(self, bw=1.0, mode=0, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1):
-        self.kde = KDE2(self.centers, self.weights_kn, labels=self.indicator(self.centers), bw=bw,
-                        mode=mode, factor=factor, local=local, gamma=gamma, df=df)
+    def density_estimation(self, bw=1.0, km=1, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1):
+        self.kde = KDE3(self.centers, self.weights_kn, bw=bw, labels=self.indicator(self.centers),
+                        km=km, factor=factor, local=local, gamma=gamma, df=df)
         self.nonpar_proposal = self.kde.pdf
         self.nonpar_sampler = self.kde.rvs
         self.mix_proposal = lambda x: alpha0 * self.init_proposal(x) + (1 - alpha0) * self.nonpar_proposal(x)
@@ -195,7 +211,7 @@ class Quantile:
         plt.show()
 
 
-def experiment(dim, alpha, size_est, show, size_kn, ratio, mode):
+def experiment(dim, alpha, size_est, show, size_kn, ratio, km):
     results = []
     mean = np.zeros(dim)
     target = lambda x: st.multivariate_normal(mean=mean).pdf(x)
@@ -208,7 +224,7 @@ def experiment(dim, alpha, size_est, show, size_kn, ratio, mode):
     if qtl.show:
         qtl.draw(grid_x, name='initial')
 
-    qtl.density_estimation(bw=1.0, mode=mode, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1)
+    qtl.density_estimation(bw=1.0, km=km, factor='scott', local=False, gamma=0.3, df=0, alpha0=0.1)
     qtl.nonparametric_estimation()
     results.extend([qtl.result[-4], qtl.result[-3], qtl.result[-2], qtl.result[-1]])
     if qtl.show:
@@ -229,7 +245,7 @@ def main():
     results = []
     for i in range(100):
         print(i + 1)
-        result = experiment(dim=4, alpha=0.05, size_est=25000, show=False, size_kn=500, ratio=20, mode=1)
+        result = experiment(dim=4, alpha=0.05, size_est=25000, show=False, size_kn=500, ratio=20, km=1)
         results.append(result)
 
     return np.array(results)

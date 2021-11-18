@@ -8,7 +8,7 @@ from niscv.basic.kde import KDE
 
 
 class KDE2:
-    def __init__(self, centers, weights, bw, mode=0, factor='scott', local=False, gamma=0.3, df=0, labels=None):
+    def __init__(self, centers, weights, bw, mode=1, factor='scott', local=False, gamma=0.3, df=0, labels=None):
         if mode == 1:
             labels = np.zeros(centers.shape[0]).astype(np.int32)
         elif mode > 1:
@@ -16,7 +16,8 @@ class KDE2:
             kmeans = KMeans(n_clusters=mode).fit(scaler.transform(centers), sample_weight=weights)
             labels = kmeans.labels_
 
-        nums = np.array([weights[labels == i].sum() for i in range(labels.max(initial=0) + 1)]).T
+        self.labels = labels
+        nums = np.array([weights[labels == i].sum() for i in range(labels.max(initial=0) + 1)])
         self.prop = nums / nums.sum()
 
         self.kdes = []
