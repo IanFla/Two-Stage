@@ -71,7 +71,7 @@ def main():
         end = dt.now()
         print((end - begin).seconds)
 
-    with open('garch_bw', 'wb') as file:
+    with open('../data/garch/garch_bw', 'wb') as file:
         pickle.dump(R, file)
 
 
