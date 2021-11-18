@@ -4,6 +4,10 @@ from niscv.clustering.quantile import Quantile
 from niscv.real.garch import GARCH
 import pandas as pd
 import seaborn as sb
+import multiprocessing
+import os
+from datetime import datetime as dt
+import pickle
 
 
 class IP:
@@ -45,9 +49,30 @@ def experiment(d, alpha, size_est, show, size_kn, ratio, bw, km, local, gamma, a
     return results, qtl.result
 
 
+def run(bw):
+    D = np.array([1, 2, 5])
+    Alpha = np.array([0.05, 0.01])
+    result = []
+    for d in D:
+        for alpha in Alpha:
+            print(bw, d, alpha)
+            result.append(experiment(d=d, alpha=alpha, size_est=100000, show=False, size_kn=3000, ratio=3000,
+                                     bw=bw, km=2, local=True, gamma=0.3, alpha0=0.1, server=True))
+
+    return result
+
+
 def main():
-    experiment(d=1, alpha=0.01, size_est=100000, show=True,
-               size_kn=3000, ratio=3000, bw=1.1, km=2, local=True, gamma=0.3, alpha0=0.1, server=True)
+    os.environ['OMP_NUM_THREADS'] = '3'
+    with multiprocessing.Pool(processes=11) as pool:
+        begin = dt.now()
+        BW = [0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7]
+        R = pool.map(run, BW)
+        end = dt.now()
+        print((end - begin).seconds)
+
+    with open('garch_bw', 'wb') as file:
+        pickle.dump(R, file)
 
 
 if __name__ == '__main__':
