@@ -33,7 +33,9 @@ def experiment(d, alpha, size_est, show, size_kn, ratio, bw, km, local, gamma, a
     qtl.initial_estimation(size_kn, ratio)
     results.extend([qtl.result[-5], qtl.result[-4]])
     qtl.density_estimation(bw=bw, km=km, factor='scott', local=local, gamma=gamma, df=0, alpha0=alpha0)
-    draw(qtl)
+    if qtl.show:
+        draw(qtl)
+
     qtl.nonparametric_estimation()
     results.extend([qtl.result[-4], qtl.result[-3], qtl.result[-2], qtl.result[-1]])
     qtl.regression_estimation()
