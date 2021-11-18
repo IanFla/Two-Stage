@@ -47,7 +47,7 @@ def experiment(d, alpha, size_est, show, size_kn, ratio, bw, km, local, gamma, a
 
 def main():
     experiment(d=5, alpha=0.01, size_est=100000, show=True,
-               size_kn=3000, ratio=1000, bw=1.4, km=2, local=True, gamma=0.3, alpha0=0.1, server=False)
+               size_kn=3000, ratio=3000, bw=1.4, km=2, local=True, gamma=0.3, alpha0=0.1, server=False)
 
 
 if __name__ == '__main__':
