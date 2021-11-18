@@ -245,7 +245,7 @@ def main():
     results = []
     for i in range(100):
         print(i + 1)
-        result = experiment(dim=4, alpha=0.05, size_est=25000, show=False, size_kn=500, ratio=20, km=1)
+        result = experiment(dim=4, alpha=0.05, size_est=25000, show=False, size_kn=500, ratio=20, km=2)
         results.append(result)
 
     return np.array(results)

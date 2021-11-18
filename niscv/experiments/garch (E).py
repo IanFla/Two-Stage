@@ -15,12 +15,12 @@ class IP:
 def draw(self):
     df = pd.DataFrame(self.centers, columns=['phi0', 'phi1', 'beta'] +
                                             ['y{}'.format(i + 1) for i in range(self.centers.shape[1] - 3)])
-    df['type'] = self.indicator(self.centers)
+    df['type'] = self.kde.labels
     sb.pairplot(df, hue='type')
     plt.show()
 
 
-def experiment(d, alpha, size_est, show, size_kn, ratio, bw, mode, local, gamma, alpha0, server=True):
+def experiment(d, alpha, size_est, show, size_kn, ratio, bw, km, local, gamma, alpha0, server=True):
     results = []
     garch = GARCH(server=server)
     garch.laplace(inflate=2, df=1)
@@ -31,9 +31,9 @@ def experiment(d, alpha, size_est, show, size_kn, ratio, bw, mode, local, gamma,
                        rvs=lambda size: np.hstack(garch.predict(d, size)))
     qtl = Quantile(3 + d, target, statistic, alpha, init_proposal, size_est, show=show)
     qtl.initial_estimation(size_kn, ratio)
-    draw(qtl)
     results.extend([qtl.result[-5], qtl.result[-4]])
-    qtl.density_estimation(bw=bw, mode=mode, factor='scott', local=local, gamma=gamma, df=0, alpha0=alpha0)
+    qtl.density_estimation(bw=bw, km=km, factor='scott', local=local, gamma=gamma, df=0, alpha0=alpha0)
+    draw(qtl)
     qtl.nonparametric_estimation()
     results.extend([qtl.result[-4], qtl.result[-3], qtl.result[-2], qtl.result[-1]])
     qtl.regression_estimation()
@@ -44,8 +44,8 @@ def experiment(d, alpha, size_est, show, size_kn, ratio, bw, mode, local, gamma,
 
 
 def main():
-    experiment(d=2, alpha=0.05, size_est=10000, show=True,
-               size_kn=1000, ratio=1000, bw=1.0, mode=4, local=False, gamma=0.3, alpha0=0.2, server=False)
+    experiment(d=2, alpha=0.05, size_est=100000, show=True,
+               size_kn=1000, ratio=1000, bw=1.0, km=2, local=False, gamma=0.3, alpha0=0.1, server=False)
 
 
 if __name__ == '__main__':
