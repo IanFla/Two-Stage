@@ -49,29 +49,30 @@ def experiment(d, alpha, size_est, show, size_kn, ratio, bw, km, local, gamma, a
     return results, qtl.result
 
 
-def run(bw):
-    D = np.array([1, 2, 5])
-    Alpha = np.array([0.05, 0.01])
+def run(it):
+    D = [1, 2, 5]
+    Alpha = [0.05, 0.01]
+    BW = [1.3, 1.4, 1.5]
     result = []
-    for d in D:
+    for i, d in enumerate(D):
         for alpha in Alpha:
-            print(bw, d, alpha)
+            print(it, d, alpha)
             result.append(experiment(d=d, alpha=alpha, size_est=100000, show=False, size_kn=3000, ratio=3000,
-                                     bw=bw, km=2, local=True, gamma=0.3, alpha0=0.1))
+                                     bw=BW[i], km=2, local=True, gamma=0.3, alpha0=0.1))
 
     return result
 
 
 def main():
-    os.environ['OMP_NUM_THREADS'] = '3'
-    with multiprocessing.Pool(processes=11) as pool:
+    os.environ['OMP_NUM_THREADS'] = '2'
+    with multiprocessing.Pool(processes=16) as pool:
         begin = dt.now()
-        BW = [0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7]
-        R = pool.map(run, BW)
+        its = np.arange(200)
+        R = pool.map(run, its)
         end = dt.now()
         print((end - begin).seconds)
 
-    with open('../data/garch/garch_bw', 'wb') as file:
+    with open('../data/garch/garch', 'wb') as file:
         pickle.dump(R, file)
 
 
