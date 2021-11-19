@@ -17,7 +17,7 @@ class IP:
 
 
 def draw(self):
-    df = pd.DataFrame(self.centers, columns=['phi0', 'phi1', 'beta'] +
+    df = pd.DataFrame(self.centers, columns=['log(phi0)', 'phi1', 'beta'] +
                                             ['y{}'.format(i + 1) for i in range(self.centers.shape[1] - 3)])
     df['cluster'] = self.kde.labels + 1
     sb.pairplot(df, hue='cluster')
