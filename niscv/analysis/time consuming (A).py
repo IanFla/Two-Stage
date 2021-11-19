@@ -37,20 +37,28 @@ def plot(data, ax, labels, c):
     return fit.coef_[0]
 
 
-def main(dim):
+def main(dim, ax, name):
     times = read(dim)
     time = times.sum(axis=0)
-    fig, ax = plt.subplots(figsize=[10, 8])
-    result = [plot(time[:, :, 0], ax, labels=['IS1', 'IS2', 'IS3', 'IS4', 'IS5'], c='b'),
-              plot(time[:, :, 1], ax, labels=['NIS1', 'NIS2', 'NIS3', 'NIS4', 'NIS5'], c='y'),
-              plot(time[:, :, 2], ax, labels=['RIS1', 'RIS2', 'RIS3', 'RIS4', 'RIS5'], c='c'),
-              plot(time[:, :, 3], ax, labels=['MLE1', 'MLE2', 'MLE3', 'MLE4', 'MLE5'], c='r')]
+    result = [plot(time[:, :, 0], ax, labels=['IS+re 1', 'IS+re 1', 'IS+re 1', 'IS+re 1', 'IS+re 1'], c='b'),
+              plot(time[:, :, 1], ax, labels=['NIS+MIS 1', 'NIS+MIS 2', 'NIS+MIS 3', 'NIS+MIS 4', 'NIS+MIS 5'], c='y'),
+              plot(time[:, :, 2], ax, labels=['RIS 1', 'RIS 2', 'RIS 3', 'RIS 4', 'RIS 5'], c='c'),
+              plot(time[:, :, 3], ax, labels=['MLE 1', 'MLE 2', 'MLE 3', 'MLE 4', 'MLE 5'], c='r')]
     ax.legend()
-    fig.show()
+    ax.set_xlabel('log(kernel number)')
+    ax.set_ylabel('log(time - seconds)')
+    ax.set_ylim([0.1, 1000])
+    ax.set_title(name)
     return result
 
 
 if __name__ == '__main__':
-    R = [main(4),
-         main(6),
-         main(8)]
+    plt.style.use('ggplot')
+    dims = [4, 6, 8]
+    R = []
+    fig, axs = plt.subplots(1, 3, figsize=[25, 7])
+    for j, di in enumerate(dims):
+        R.append(main(di, axs[j], str(di)+'D'))
+
+    fig.tight_layout()
+    fig.show()
