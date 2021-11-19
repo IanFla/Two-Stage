@@ -63,15 +63,15 @@ def run(bw):
 
 
 def main():
-    os.environ['OMP_NUM_THREADS'] = '3'
-    with multiprocessing.Pool(processes=11) as pool:
+    os.environ['OMP_NUM_THREADS'] = '2'
+    with multiprocessing.Pool(processes=16) as pool:
         begin = dt.now()
-        BW = [0.7, 0.8, 0.9, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7]
+        BW = [0.6, 0.8, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.2, 2.4, 2.6]
         R = pool.map(run, BW)
         end = dt.now()
         print((end - begin).seconds)
 
-    with open('../data/garch/garch_bw', 'wb') as file:
+    with open('../data/garch/garch_bw2', 'wb') as file:
         pickle.dump(R, file)
 
 
