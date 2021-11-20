@@ -1,4 +1,4 @@
-<mxfile host="app.diagrams.net" modified="2021-11-11T16:33:33.513Z" agent="5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/95.0.4638.69 Safari/537.36" etag="SHdjp5rDnixHT2pn9FnN" version="15.7.3" type="github">
+<mxfile host="app.diagrams.net" modified="2021-11-20T02:48:07.841Z" agent="5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.55 Safari/537.36" etag="Ipioln-I5mbm92XrlvJ8" version="15.7.4" type="github">
   <diagram id="flBKViSO2IA0_2ObG1LQ" name="Page-1">
     <mxGraphModel dx="946" dy="614" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="827" pageHeight="1169" math="0" shadow="0">
       <root>
@@ -49,10 +49,10 @@
         <mxCell id="cYwZuHe3sfv1-YwEh1SX-94" value="non-ratio" style="whiteSpace=wrap;html=1;align=center;fontSize=16;" parent="1" vertex="1">
           <mxGeometry x="120" y="120" width="120" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="cYwZuHe3sfv1-YwEh1SX-95" value="(1) quick &lt;br&gt;and simple" style="whiteSpace=wrap;html=1;align=left;fontSize=16;fillColor=#d5e8d4;strokeColor=#000000;" parent="1" vertex="1">
+        <mxCell id="cYwZuHe3sfv1-YwEh1SX-95" value="(1) quick &lt;br&gt;and&amp;nbsp;robust" style="whiteSpace=wrap;html=1;align=left;fontSize=16;fillColor=#d5e8d4;strokeColor=#000000;" parent="1" vertex="1">
           <mxGeometry x="240" y="120" width="110" height="80" as="geometry" />
         </mxCell>
-        <mxCell id="cYwZuHe3sfv1-YwEh1SX-96" value="&lt;div&gt;(1) quick&amp;nbsp;&lt;/div&gt;&lt;div&gt;and simple&lt;/div&gt;&lt;div&gt;(2) no&amp;nbsp;&lt;/div&gt;&lt;div&gt;bias issue&lt;/div&gt;" style="whiteSpace=wrap;html=1;align=left;fontSize=16;fillColor=#d5e8d4;strokeColor=#000000;" parent="1" vertex="1">
+        <mxCell id="cYwZuHe3sfv1-YwEh1SX-96" value="&lt;div&gt;(1) quick&amp;nbsp;&lt;/div&gt;&lt;div&gt;and&amp;nbsp;robust&lt;/div&gt;&lt;div&gt;(2) no&amp;nbsp;&lt;/div&gt;&lt;div&gt;bias issue&lt;/div&gt;" style="whiteSpace=wrap;html=1;align=left;fontSize=16;fillColor=#d5e8d4;strokeColor=#000000;" parent="1" vertex="1">
           <mxGeometry x="240" y="200" width="110" height="80" as="geometry" />
         </mxCell>
         <mxCell id="cYwZuHe3sfv1-YwEh1SX-97" value="(3&#39;) can not estimate the normalizing constant" style="whiteSpace=wrap;html=1;align=left;fontSize=16;fillColor=#f8cecc;strokeColor=#000000;" parent="1" vertex="1">
