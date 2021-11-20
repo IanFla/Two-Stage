@@ -48,7 +48,7 @@ def main(dim, ax, name):
     ax.legend()
     ax.set_xlabel('log(sample size)')
     ax.set_ylabel('log(time - seconds)')
-    ax.set_ylim([0.1, 1000])
+    ax.set_ylim([1, 100])
     ax.set_title(name)
     return result
 
