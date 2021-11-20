@@ -5,7 +5,7 @@ import sklearn.linear_model as lm
 
 
 def read(dim):
-    file = open('/Users/ianfla/Documents/GitHub/Two-Stage/niscv/data/normal/time_' + str(dim) + 'D', 'rb')
+    file = open('/Users/ianfla/Documents/GitHub/Two-Stage/niscv/data/normal/time2_' + str(dim) + 'D', 'rb')
     Data = pickle.load(file)
     Results = []
     for data in Data:
@@ -27,13 +27,14 @@ def read(dim):
 
 
 def plot(data, ax, labels, c):
-    size_kns = np.array([50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 1000])
+    # size_kns = np.array([50, 100, 150, 200, 250, 300, 400, 500, 600, 700, 850, 1000])
+    size_ests = np.array([1000, 2000, 3000, 5000, 7000, 10000, 20000, 30000, 50000, 70000, 100000])
     lines = ['-', '--', '-.', ':', '.']
     for i, dat in enumerate(data):
-        ax.loglog(size_kns, dat, c + lines[i], label=labels[i])
+        ax.loglog(size_ests, dat, c + lines[i], label=labels[i])
 
     data = data.mean(axis=0)
-    fit = lm.LinearRegression().fit(np.log(size_kns.reshape([-1, 1])), np.log(data))
+    fit = lm.LinearRegression().fit(np.log(size_ests.reshape([-1, 1])), np.log(data))
     return fit.coef_[0]
 
 
@@ -45,7 +46,7 @@ def main(dim, ax, name):
               plot(time[:, :, 2], ax, labels=['RIS 1', 'RIS 2', 'RIS 3', 'RIS 4', 'RIS 5'], c='c'),
               plot(time[:, :, 3], ax, labels=['MLE 1', 'MLE 2', 'MLE 3', 'MLE 4', 'MLE 5'], c='r')]
     ax.legend()
-    ax.set_xlabel('log(kernel number)')
+    ax.set_xlabel('log(sample size)')
     ax.set_ylabel('log(time - seconds)')
     ax.set_ylim([0.1, 1000])
     ax.set_title(name)
