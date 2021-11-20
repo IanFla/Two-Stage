@@ -29,9 +29,9 @@ def main():
     data = read()
     plt.style.use('ggplot')
     fig, ax = plt.subplots(1, 3, figsize=[25, 7])
-    plot(data[:, 0:2, [-7, -5, -3, -1]], ax[0], 'd=1')
-    plot(data[:, 2:4, [-7, -5, -3, -1]], ax[1], 'd=2')
-    plot(data[:, 4:6, [-7, -5, -3, -1]], ax[2], 'd=5')
+    plot(data[:, 0:2, [-7, -5, -3, -1]], ax[0], '4D (d=1)')
+    plot(data[:, 2:4, [-7, -5, -3, -1]], ax[1], '5D (d=2)')
+    plot(data[:, 4:6, [-7, -5, -3, -1]], ax[2], '8D (d=5)')
     fig.tight_layout()
     fig.show()
 
