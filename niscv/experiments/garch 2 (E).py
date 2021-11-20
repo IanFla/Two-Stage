@@ -45,28 +45,27 @@ def experiment(d, alpha, size_est, show, size_kn, ratio, bw, km, local, gamma, a
     results.extend([qtl.result[-4], qtl.result[-3], qtl.result[-2], qtl.result[-1]])
     qtl.regression_estimation()
     results.extend([qtl.result[-2], qtl.result[-1]])
-    # qtl.likelihood_estimation(optimize=True, NR=True)
-    # results.append(qtl.result[-1])
+    qtl.likelihood_estimation(optimize=True, NR=True)
+    results.append(qtl.result[-1])
     return results, qtl.result
 
 
 def run(it):
     D = [1, 2, 5]
     Alpha = [0.05, 0.01]
-    BW = [1.3, 1.4, 1.5]
     result = []
     for i, d in enumerate(D):
         for alpha in Alpha:
             print(it, d, alpha)
-            result.append(experiment(d=d, alpha=alpha, size_est=100000, show=False, size_kn=3000, ratio=3000,
-                                     bw=BW[i], km=2, local=True, gamma=0.3, alpha0=0.1))
+            result.append(experiment(d=d, alpha=alpha, size_est=1000000, show=False, size_kn=2000, ratio=3000,
+                                     bw=1.5, km=2, local=True, gamma=0.3, alpha0=0.1))
 
     return result
 
 
 def main():
-    os.environ['OMP_NUM_THREADS'] = '2'
-    with multiprocessing.Pool(processes=16) as pool:
+    os.environ['OMP_NUM_THREADS'] = '3'
+    with multiprocessing.Pool(processes=10) as pool:
         begin = dt.now()
         its = np.arange(200)
         R = pool.map(run, its)
