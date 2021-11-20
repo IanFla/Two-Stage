@@ -58,7 +58,7 @@ def run(it):
         for alpha in Alpha:
             print(it, d, alpha)
             result.append(experiment(d=d, alpha=alpha, size_est=400000, show=False, size_kn=2000, ratio=3000,
-                                     bw=1.5, km=2, local=True, gamma=0.3, alpha0=0.1))
+                                     bw=1.4, km=2, local=True, gamma=0.3, alpha0=0.1))
 
     return result
 
