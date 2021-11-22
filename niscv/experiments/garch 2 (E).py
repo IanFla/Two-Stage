@@ -6,6 +6,7 @@ import pandas as pd
 import seaborn as sb
 import multiprocessing
 import os
+from functools import partial
 from datetime import datetime as dt
 import pickle
 
@@ -50,13 +51,14 @@ def experiment(d, alpha, size_est, show, size_kn, ratio, bw, km, local, gamma, a
     return results, qtl.result
 
 
-def run(it):
+def run(it, num):
+    np.random.seed(1997 * num + 1107 + it)
     D = [1, 2, 5]
     Alpha = [0.05, 0.01]
     result = []
     for i, d in enumerate(D):
         for alpha in Alpha:
-            print(it, d, alpha)
+            print(num, it, d, alpha)
             result.append(experiment(d=d, alpha=alpha, size_est=400000, show=False, size_kn=2000, ratio=3000,
                                      bw=1.4, km=2, local=True, gamma=0.3, alpha0=0.1))
 
@@ -68,7 +70,7 @@ def main(num):
     with multiprocessing.Pool(processes=10) as pool:
         begin = dt.now()
         its = np.arange(10)
-        R = pool.map(run, its)
+        R = pool.map(partial(run, num=num), its)
         end = dt.now()
         print((end - begin).seconds)
 
