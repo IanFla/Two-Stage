@@ -79,5 +79,5 @@ def main(num):
 
 
 if __name__ == '__main__':
-    for n in np.arange(1, 31):
+    for n in np.arange(3, 31):
         main(n)
