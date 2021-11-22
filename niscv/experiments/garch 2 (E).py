@@ -63,18 +63,19 @@ def run(it):
     return result
 
 
-def main():
+def main(num):
     os.environ['OMP_NUM_THREADS'] = '3'
     with multiprocessing.Pool(processes=10) as pool:
         begin = dt.now()
-        its = np.arange(200)
+        its = np.arange(10)
         R = pool.map(run, its)
         end = dt.now()
         print((end - begin).seconds)
 
-    with open('../data/garch/garch', 'wb') as file:
+    with open('../data/garch/garch' + str(num), 'wb') as file:
         pickle.dump(R, file)
 
 
 if __name__ == '__main__':
-    main()
+    for n in np.arange(1, 31):
+        main(n)
