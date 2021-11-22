@@ -16,8 +16,8 @@ def main():
     nvars[:, 0] = 2000 * 3000 * nvars[:, 0]
     nvars[:, 1:] = 400000 * nvars[:, 1:]
     print(means[:, 0::2])
-    print(nvars[:, 0::2])
-    print(means[:, 1::2])
+    print(nvars[:, 2::2] / nvars[:, 0].reshape([-1, 1]))
+    print(means[:, 3::2] / means[:, 1].reshape([-1, 1]))
     return data
 
 
