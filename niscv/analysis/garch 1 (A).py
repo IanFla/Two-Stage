@@ -14,7 +14,8 @@ def plot(data, ax, name):
     BW = [0.6, 0.8, 1.0, 1.1, 1.2, 1.3, 1.4, 1.5, 1.6, 1.7, 1.8, 1.9, 2.0, 2.2, 2.4, 2.6]
     colors = ['b', 'y', 'c', 'r']
     lines = ['-', '--']
-    labels = [['IS (0.05)', 'IS (0.01)'], ['NIS (0.05)', 'NIS (0.01)'], ['MIS (0.05)', 'MIS (0.01)'], ['RIS (0.05)', 'RIS (0.01)']]
+    labels = [['IS (0.05)', 'IS (0.01)'], ['NIS (0.05)', 'NIS (0.01)'],
+              ['MIS (0.05)', 'MIS (0.01)'], ['RIS (0.05)', 'RIS (0.01)']]
     for i, color in enumerate(colors):
         for j, line in enumerate(lines):
             ax.semilogy(BW, data[:, j, i], color + line, label=labels[i][j])
