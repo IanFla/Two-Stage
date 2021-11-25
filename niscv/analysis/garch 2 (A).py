@@ -10,7 +10,7 @@ def read(num):
 
 
 def main():
-    data = np.vstack([read(num) for num in np.arange(1, 20)])
+    data = np.vstack([read(num) for num in np.arange(1, 25)])
     means = data.mean(axis=0)
     nvars = data.var(axis=0)
     nvars[:, 0] = 2000 * 3000 * nvars[:, 0]
